@@ -130,6 +130,10 @@ cd desktop
 npm run build
 ```
 
+## Roadmap
+
+Planned improvements are tracked in [ROADMAP.md](ROADMAP.md).
+
 ## Current Scope
 
 ShardCut `0.1.0` handles local single-file splitting and merging. It does not include directory packaging, compression, encryption, cloud sync, or network transfer. The current priority is stable, recoverable large-file processing with clear validation and strong SHA-256 verification.
