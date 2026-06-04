@@ -1,10 +1,21 @@
+use serde::Serialize;
 use shardcut_core::{
-    merge_file, split_file, verify_manifest, MergeOptions, SplitMode, SplitOptions,
+    merge_file_with_progress, split_file_with_progress, verify_manifest, MergeOptions, SplitMode,
+    SplitOptions, TaskProgress,
 };
 use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
+
+#[derive(Clone, Serialize)]
+struct ProgressEvent {
+    task_id: String,
+    progress: TaskProgress,
+}
 
 #[tauri::command]
 fn split(
+    app: AppHandle,
+    task_id: String,
     input_path: String,
     output_dir: String,
     mode: String,
@@ -25,23 +36,53 @@ fn split(
         },
         _ => return Err("unknown split mode".to_string()),
     };
-    let manifest = split_file(SplitOptions {
-        input_path: PathBuf::from(input_path),
-        output_dir: PathBuf::from(output_dir),
-        mode: split_mode,
-        overwrite,
-    })
+    let emit_task_id = task_id.clone();
+    let manifest = split_file_with_progress(
+        SplitOptions {
+            input_path: PathBuf::from(input_path),
+            output_dir: PathBuf::from(output_dir),
+            mode: split_mode,
+            overwrite,
+        },
+        move |progress| {
+            let _ = app.emit(
+                "task-progress",
+                ProgressEvent {
+                    task_id: emit_task_id.clone(),
+                    progress,
+                },
+            );
+        },
+    )
     .map_err(|error| error.to_string())?;
     serde_json::to_value(manifest).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn merge(manifest_path: String, output_path: String, overwrite: bool) -> Result<String, String> {
-    merge_file(MergeOptions {
-        manifest_path: PathBuf::from(manifest_path),
-        output_path: PathBuf::from(output_path),
-        overwrite,
-    })
+fn merge(
+    app: AppHandle,
+    task_id: String,
+    manifest_path: String,
+    output_path: String,
+    overwrite: bool,
+) -> Result<String, String> {
+    let emit_task_id = task_id.clone();
+    merge_file_with_progress(
+        MergeOptions {
+            manifest_path: PathBuf::from(manifest_path),
+            output_path: PathBuf::from(output_path),
+            overwrite,
+        },
+        move |progress| {
+            let _ = app.emit(
+                "task-progress",
+                ProgressEvent {
+                    task_id: emit_task_id.clone(),
+                    progress,
+                },
+            );
+        },
+    )
     .map(|path| path.display().to_string())
     .map_err(|error| error.to_string())
 }

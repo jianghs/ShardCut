@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use shardcut_core::{
-    merge_file, split_file, verify_manifest, MergeOptions, SplitMode, SplitOptions,
+    merge_file_with_progress, split_file_with_progress, verify_manifest, MergeOptions, SplitMode,
+    SplitOptions, TaskPhase, TaskProgress,
 };
 use std::path::PathBuf;
 
@@ -68,12 +69,16 @@ fn main() -> Result<()> {
                 },
                 _ => bail!("choose exactly one split mode: --size, --parts, or --lines"),
             };
-            let manifest = split_file(SplitOptions {
-                input_path: file,
-                output_dir: out,
-                mode,
-                overwrite,
-            })?;
+            let manifest = split_file_with_progress(
+                SplitOptions {
+                    input_path: file,
+                    output_dir: out,
+                    mode,
+                    overwrite,
+                },
+                print_progress,
+            )?;
+            eprintln!();
             println!("{}", serde_json::to_string_pretty(&manifest)?);
         }
         Command::Merge {
@@ -81,11 +86,15 @@ fn main() -> Result<()> {
             out,
             overwrite,
         } => {
-            let output = merge_file(MergeOptions {
-                manifest_path: manifest,
-                output_path: out,
-                overwrite,
-            })?;
+            let output = merge_file_with_progress(
+                MergeOptions {
+                    manifest_path: manifest,
+                    output_path: out,
+                    overwrite,
+                },
+                print_progress,
+            )?;
+            eprintln!();
             println!("merged: {}", output.display());
         }
         Command::Verify { manifest } => {
@@ -97,6 +106,58 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_progress(progress: TaskProgress) {
+    let percent = if progress.bytes_total > 0 {
+        (progress.bytes_done as f64 / progress.bytes_total as f64 * 100.0).min(100.0)
+    } else {
+        100.0
+    };
+    let phase = match progress.phase {
+        TaskPhase::Splitting => "splitting",
+        TaskPhase::Merging => "merging",
+        TaskPhase::Verifying => "verifying",
+        TaskPhase::Completed => "completed",
+    };
+    let eta = progress
+        .eta_seconds
+        .map(format_duration)
+        .unwrap_or_else(|| "--".to_string());
+    eprint!(
+        "\r{phase}: {:>6.2}% | part {} | {}/s | ETA {}",
+        percent,
+        progress.current_part,
+        format_bytes(progress.speed_bps),
+        eta
+    );
+}
+
+fn format_duration(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    let seconds = seconds % 60;
+    if minutes > 0 {
+        format!("{minutes}m {seconds:02}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let units = ["KB", "MB", "GB", "TB"];
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = units[0];
+    for next_unit in units.iter().skip(1) {
+        if value < 1024.0 {
+            break;
+        }
+        value /= 1024.0;
+        unit = next_unit;
+    }
+    format!("{value:.1} {unit}")
 }
 
 fn parse_size(input: &str) -> Result<u64> {

@@ -7,6 +7,7 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 const BUFFER_SIZE: usize = 16 * 1024 * 1024;
@@ -82,6 +83,7 @@ pub struct TaskProgress {
     pub bytes_total: u64,
     pub current_part: u32,
     pub speed_bps: u64,
+    pub eta_seconds: Option<u64>,
     pub lines_done: Option<u64>,
 }
 
@@ -127,6 +129,13 @@ pub struct Manifest {
 }
 
 pub fn split_file(options: SplitOptions) -> Result<Manifest> {
+    split_file_with_progress(options, |_| {})
+}
+
+pub fn split_file_with_progress(
+    options: SplitOptions,
+    mut on_progress: impl FnMut(TaskProgress),
+) -> Result<Manifest> {
     validate_split_options(&options)?;
     fs::create_dir_all(&options.output_dir)?;
 
@@ -134,18 +143,29 @@ pub fn split_file(options: SplitOptions) -> Result<Manifest> {
     let original_size = metadata.len();
     let original_file_name = file_name(&options.input_path)?;
     validate_split_plan(&options.mode, original_size)?;
+    let started = Instant::now();
 
     let manifest = match options.mode {
-        SplitMode::BySize { bytes } => {
-            split_by_byte_limit(&options, original_size, original_file_name, bytes)?
-        }
+        SplitMode::BySize { bytes } => split_by_byte_limit(
+            &options,
+            original_size,
+            original_file_name,
+            bytes,
+            &mut on_progress,
+        )?,
         SplitMode::ByParts { count } => {
             let bytes = if original_size == 0 {
                 1
             } else {
                 original_size.div_ceil(u64::from(count))
             };
-            split_by_byte_limit(&options, original_size, original_file_name, bytes)?
+            split_by_byte_limit(
+                &options,
+                original_size,
+                original_file_name,
+                bytes,
+                &mut on_progress,
+            )?
         }
         SplitMode::ByLines {
             lines_per_part,
@@ -156,6 +176,7 @@ pub fn split_file(options: SplitOptions) -> Result<Manifest> {
             original_file_name,
             lines_per_part,
             repeat_header,
+            &mut on_progress,
         )?,
     };
 
@@ -163,13 +184,30 @@ pub fn split_file(options: SplitOptions) -> Result<Manifest> {
         .output_dir
         .join(format!("{}.manifest.json", manifest.original_file_name));
     write_json(&manifest_path, &manifest, options.overwrite)?;
+    emit_progress(
+        &mut on_progress,
+        TaskPhase::Completed,
+        original_size,
+        original_size,
+        manifest.parts.len() as u32,
+        started,
+        None,
+    );
     Ok(manifest)
 }
 
 pub fn merge_file(options: MergeOptions) -> Result<PathBuf> {
+    merge_file_with_progress(options, |_| {})
+}
+
+pub fn merge_file_with_progress(
+    options: MergeOptions,
+    mut on_progress: impl FnMut(TaskProgress),
+) -> Result<PathBuf> {
     let manifest = read_manifest(&options.manifest_path)?;
     let output_path = resolve_merge_output(&options.output_path, &manifest);
     ensure_output_allowed(&output_path, options.overwrite)?;
+    let started = Instant::now();
 
     let manifest_dir = options
         .manifest_path
@@ -181,12 +219,22 @@ pub fn merge_file(options: MergeOptions) -> Result<PathBuf> {
 
     let mut writer = BufWriter::with_capacity(BUFFER_SIZE, File::create(&tmp_path)?);
     let mut merged_hasher = Sha256::new();
+    let mut bytes_done = 0u64;
 
     for part in &manifest.parts {
         let part_path = manifest_dir.join(&part.file_name);
         if !part_path.exists() {
             return Err(ShardCutError::MissingPart(part_path));
         }
+        emit_progress(
+            &mut on_progress,
+            TaskPhase::Verifying,
+            bytes_done,
+            manifest.original_size,
+            part.index,
+            started,
+            None,
+        );
         let actual = sha256_file(&part_path)?;
         if actual != part.sha256 {
             return Err(ShardCutError::CorruptedPart {
@@ -197,7 +245,24 @@ pub fn merge_file(options: MergeOptions) -> Result<PathBuf> {
         }
 
         let skip_prefix = repeated_header_to_skip(&manifest, part.index);
-        copy_part_for_merge(&part_path, &mut writer, &mut merged_hasher, skip_prefix)?;
+        copy_part_for_merge(
+            &part_path,
+            &mut writer,
+            &mut merged_hasher,
+            skip_prefix,
+            |written| {
+                bytes_done += written;
+                emit_progress(
+                    &mut on_progress,
+                    TaskPhase::Merging,
+                    bytes_done,
+                    manifest.original_size,
+                    part.index,
+                    started,
+                    None,
+                );
+            },
+        )?;
     }
 
     writer.flush()?;
@@ -212,6 +277,15 @@ pub fn merge_file(options: MergeOptions) -> Result<PathBuf> {
         });
     }
 
+    emit_progress(
+        &mut on_progress,
+        TaskPhase::Completed,
+        manifest.original_size,
+        manifest.original_size,
+        manifest.parts.len() as u32,
+        started,
+        None,
+    );
     Ok(output_path)
 }
 
@@ -315,12 +389,15 @@ fn split_by_byte_limit(
     original_size: u64,
     original_file_name: String,
     byte_limit: u64,
+    on_progress: &mut impl FnMut(TaskProgress),
 ) -> Result<Manifest> {
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(&options.input_path)?);
     let mut original_hasher = Sha256::new();
     let mut parts = Vec::new();
     let mut buffer = vec![0u8; BUFFER_SIZE];
     let mut part_index = 1;
+    let mut bytes_done = 0u64;
+    let started = Instant::now();
 
     if original_size == 0 {
         let part = write_part(
@@ -362,6 +439,16 @@ fn split_by_byte_limit(
                 part_hasher.update(chunk);
                 original_hasher.update(chunk);
                 part_size += read as u64;
+                bytes_done += read as u64;
+                emit_progress(
+                    on_progress,
+                    TaskPhase::Splitting,
+                    bytes_done,
+                    original_size,
+                    part_index,
+                    started,
+                    None,
+                );
             }
 
             if part_size == 0 {
@@ -404,6 +491,7 @@ fn split_by_lines(
     original_file_name: String,
     lines_per_part: u64,
     repeat_header: bool,
+    on_progress: &mut impl FnMut(TaskProgress),
 ) -> Result<Manifest> {
     let file = File::open(&options.input_path)?;
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
@@ -415,6 +503,8 @@ fn split_by_lines(
     let mut total_lines = 0;
     let mut body_lines_in_part = 0;
     let mut pending_unterminated_line = false;
+    let mut bytes_done = 0u64;
+    let started = Instant::now();
 
     if repeat_header {
         let mut header_bytes = Vec::new();
@@ -422,7 +512,17 @@ fn split_by_lines(
         if read > 0 {
             original_hasher.update(&header_bytes);
             total_lines = 1;
+            bytes_done += read as u64;
             header = Some(header_bytes);
+            emit_progress(
+                on_progress,
+                TaskPhase::Splitting,
+                bytes_done,
+                original_size,
+                part_index,
+                started,
+                Some(total_lines),
+            );
         }
     }
 
@@ -434,6 +534,7 @@ fn split_by_lines(
         }
         let chunk = &buffer[..read];
         original_hasher.update(chunk);
+        bytes_done += read as u64;
 
         let mut start = 0;
         for newline in memchr_iter(b'\n', chunk) {
@@ -476,6 +577,16 @@ fn split_by_lines(
             active_part.write(&chunk[start..])?;
             pending_unterminated_line = true;
         }
+
+        emit_progress(
+            on_progress,
+            TaskPhase::Splitting,
+            bytes_done,
+            original_size,
+            part_index,
+            started,
+            Some(total_lines),
+        );
     }
 
     if pending_unterminated_line {
@@ -641,6 +752,7 @@ fn copy_part_for_merge(
     writer: &mut BufWriter<File>,
     merged_hasher: &mut Sha256,
     skip_prefix: usize,
+    mut on_chunk: impl FnMut(u64),
 ) -> Result<()> {
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(part_path)?);
     let mut buffer = vec![0u8; BUFFER_SIZE];
@@ -657,10 +769,42 @@ fn copy_part_for_merge(
             let chunk = &buffer[start..read];
             writer.write_all(chunk)?;
             merged_hasher.update(chunk);
+            on_chunk(chunk.len() as u64);
         }
     }
 
     Ok(())
+}
+
+fn emit_progress(
+    on_progress: &mut impl FnMut(TaskProgress),
+    phase: TaskPhase,
+    bytes_done: u64,
+    bytes_total: u64,
+    current_part: u32,
+    started: Instant,
+    lines_done: Option<u64>,
+) {
+    let elapsed = started.elapsed().as_secs_f64();
+    let speed_bps = if elapsed > 0.0 {
+        (bytes_done as f64 / elapsed) as u64
+    } else {
+        0
+    };
+    let eta_seconds = if speed_bps > 0 && bytes_total > bytes_done {
+        Some((bytes_total - bytes_done).div_ceil(speed_bps))
+    } else {
+        None
+    };
+    on_progress(TaskProgress {
+        phase,
+        bytes_done,
+        bytes_total,
+        current_part,
+        speed_bps,
+        eta_seconds,
+        lines_done,
+    });
 }
 
 fn repeated_header_to_skip(manifest: &Manifest, part_index: u32) -> usize {

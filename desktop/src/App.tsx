@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
@@ -35,6 +36,21 @@ type VerifyResult = {
   missing_parts: string[];
   corrupted_parts: string[];
   expected_hash: string;
+};
+
+type TaskProgress = {
+  phase: "Splitting" | "Merging" | "Verifying" | "Completed";
+  bytes_done: number;
+  bytes_total: number;
+  current_part: number;
+  speed_bps: number;
+  eta_seconds?: number | null;
+  lines_done?: number | null;
+};
+
+type ProgressEvent = {
+  task_id: string;
+  progress: TaskProgress;
 };
 
 type DetailPanel = {
@@ -197,9 +213,16 @@ export default function App() {
     tasks: emptyPageState,
     settings: emptyPageState
   });
+  const [progressState, setProgressState] = useState<Record<View, TaskProgress | null>>({
+    split: null,
+    merge: null,
+    tasks: null,
+    settings: null
+  });
 
   const copy = text[language];
   const activeState = pageState[view];
+  const activeProgress = progressState[view];
   const sizePreview = useMemo(
     () => `${copy.approx} ${formatBytes(sizeBytes(sizeValue, sizeUnit) || 0)}`,
     [copy, sizeUnit, sizeValue]
@@ -234,9 +257,10 @@ export default function App() {
   async function runSplit() {
     const validation = validateSplit();
     if (validation) return showError("split", validation);
-    await runTask("split", async () => {
+    await runTask("split", async (taskId) => {
       const output = outputDir.trim() || parentDir(inputPath.trim());
       const result = await invoke<SplitManifest>("split", {
+        taskId,
         inputPath: inputPath.trim(),
         outputDir: output,
         mode,
@@ -278,7 +302,7 @@ export default function App() {
   async function runMerge() {
     const validation = validateMerge();
     if (validation) return showError("merge", validation);
-    await runTask("merge", async () => {
+    await runTask("merge", async (taskId) => {
       const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
       if (!verified.ok) {
         setPage("merge", {
@@ -288,6 +312,7 @@ export default function App() {
         return;
       }
       const output = await invoke<string>("merge", {
+        taskId,
         manifestPath: manifestPath.trim(),
         outputPath: mergeOut.trim(),
         overwrite
@@ -307,20 +332,31 @@ export default function App() {
     });
   }
 
-  async function runTask(target: View, task: () => Promise<void>) {
+  async function runTask(target: View, task: (taskId: string) => Promise<void>) {
+    const taskId = `${target}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const unlisten = await listen<ProgressEvent>("task-progress", (event) => {
+      if (event.payload.task_id !== taskId) return;
+      setProgress(target, event.payload.progress);
+    });
     setBusy(true);
     setPage(target, { status: copy.running, details: null });
+    setProgress(target, null);
     try {
-      await task();
+      await task(taskId);
     } catch (error) {
       showError(target, friendlyError(String(error), copy));
     } finally {
       setBusy(false);
+      unlisten();
     }
   }
 
   function setPage(target: View, state: PageState) {
     setPageState((current) => ({ ...current, [target]: state }));
+  }
+
+  function setProgress(target: View, progress: TaskProgress | null) {
+    setProgressState((current) => ({ ...current, [target]: progress }));
   }
 
   function showError(target: View, message: string) {
@@ -489,6 +525,7 @@ export default function App() {
           {statusIcon(activeState.status, copy)}
           <span>{activeState.status || copy.idle}</span>
         </footer>
+        {activeProgress && <ProgressPanel progress={activeProgress} />}
         {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
       </section>
     </main>
@@ -519,6 +556,31 @@ function NumberField(props: { label: string; value: string; onChange: (value: st
       <label>{props.label}</label>
       <input inputMode="numeric" value={props.value} onChange={(event) => props.onChange(formatNumericInput(event.target.value))} />
     </div>
+  );
+}
+
+function ProgressPanel(props: { progress: TaskProgress }) {
+  const percent = props.progress.bytes_total > 0
+    ? Math.min(100, (props.progress.bytes_done / props.progress.bytes_total) * 100)
+    : 100;
+  const eta = props.progress.eta_seconds == null ? "--" : formatDuration(props.progress.eta_seconds);
+  return (
+    <section className="progress-panel" aria-label="Task progress">
+      <div className="progress-topline">
+        <strong>{phaseLabel(props.progress.phase)}</strong>
+        <span>{percent.toFixed(1)}%</span>
+      </div>
+      <div className="progress-track">
+        <div style={{ width: `${percent}%` }} />
+      </div>
+      <div className="progress-metrics">
+        <span>{formatBytes(props.progress.bytes_done)} / {formatBytes(props.progress.bytes_total)}</span>
+        <span>{formatBytes(props.progress.speed_bps)}/s</span>
+        <span>ETA {eta}</span>
+        <span>Part {formatNumber(props.progress.current_part)}</span>
+        {props.progress.lines_done != null && <span>Lines {formatNumber(props.progress.lines_done)}</span>}
+      </div>
+    </section>
   );
 }
 
@@ -674,6 +736,22 @@ function formatBytes(bytes: number) {
     unit = units[index];
   }
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "--";
+  const wholeSeconds = Math.round(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+  return `${remainingSeconds}s`;
+}
+
+function phaseLabel(phase: TaskProgress["phase"]) {
+  if (phase === "Merging") return "Merging";
+  if (phase === "Verifying") return "Verifying";
+  if (phase === "Completed") return "Completed";
+  return "Splitting";
 }
 
 function shortHash(hash: string) {
