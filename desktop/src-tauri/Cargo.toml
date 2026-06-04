@@ -1,0 +1,20 @@
+[package]
+name = "shardcut-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "shardcut_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+shardcut-core = { path = "../../core" }
+tauri = { version = "2.0", features = [] }
+tauri-plugin-dialog = "2.0"
