@@ -22,7 +22,7 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [x] Wrap long result paths, hashes, and part names instead of truncating them.
 - [ ] Add a persistent task history view.
 - [x] Add an "open output folder" action after split and merge.
-- [ ] Show manifest and part integrity status on the merge page.
+- [x] Show manifest and part integrity status on the merge page.
 - [ ] Centralize all UI and validation strings for English and Chinese localization.
 
 ## Phase 3: Verification Capabilities
