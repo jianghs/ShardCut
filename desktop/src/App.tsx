@@ -74,12 +74,6 @@ type PageState = {
   outputPath?: string;
 };
 
-type MergeVerifyStatus =
-  | null
-  | "loading"
-  | "error"
-  | VerifyResult;
-
 type RecentDirs = {
   inputDir: string;
   outputDir: string;
@@ -149,8 +143,6 @@ const text = {
     missingParts: "缺失分片",
     corruptedParts: "损坏分片",
     noIssues: "未发现问题",
-    verifyingManifest: "校验中...",
-    partsOk: "所有分片完好",
     openOutputFolder: "打开输出目录",
     partPreview: "分片预览",
     moreParts: "还有更多分片未显示",
@@ -209,8 +201,6 @@ const text = {
     missingParts: "Missing parts",
     corruptedParts: "Corrupted parts",
     noIssues: "No issues found",
-    verifyingManifest: "Verifying...",
-    partsOk: "All parts intact",
     openOutputFolder: "Open output folder",
     partPreview: "Part preview",
     moreParts: "More parts not shown",
@@ -246,7 +236,6 @@ export default function App() {
     split: null,
     merge: null
   });
-  const [mergeVerify, setMergeVerify] = useState<MergeVerifyStatus>(null);
 
   const copy = text[language];
   const activeState = pageState[view];
@@ -309,10 +298,6 @@ export default function App() {
       cleanup?.();
     };
   }, []);
-
-  useEffect(() => {
-    setMergeVerify(null);
-  }, [manifestPath]);
 
   async function chooseInputFile() {
     const selected = await open({
@@ -379,8 +364,23 @@ export default function App() {
     await runTask("merge", async (taskId) => {
       rememberDir("manifestDir", parentDir(manifestPath.trim()));
       const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
-      setMergeVerify(verified);
-      if (!verified.ok) return;
+      if (!verified.ok) {
+        setPage("merge", {
+          status: copy.verifyFailed,
+          details: {
+            title: copy.verifyFailed,
+            items: [
+              { label: copy.missingParts, value: String(verified.missing_parts.length) },
+              { label: copy.corruptedParts, value: String(verified.corrupted_parts.length) }
+            ],
+            issues: [
+              ...verified.missing_parts.map((p) => `${copy.missingParts}: ${fileName(p)}`),
+              ...verified.corrupted_parts.map((p) => `${copy.corruptedParts}: ${fileName(p)}`)
+            ]
+          }
+        });
+        return;
+      }
       const summary = await invoke<ManifestSummary>("manifest_summary", { manifestPath: manifestPath.trim() });
       const outputPath = defaultMergeOutputPath(manifestPath.trim(), summary.original_file_name);
       const output = await invoke<string>("merge", {
@@ -612,7 +612,6 @@ export default function App() {
             {view === "merge" && (
               <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
             <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} onClear={() => setManifestPath("")} clearDisabled={busy} />
-            {mergeVerify && typeof mergeVerify !== "string" && !mergeVerify.ok && !busy && <VerifyStatusPanel status={mergeVerify} copy={copy} />}
             <div className="command-row">
               {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
@@ -734,51 +733,6 @@ function ProgressPanel(props: { progress: TaskProgress }) {
         {props.progress.lines_done != null && <span>Lines {formatNumber(props.progress.lines_done)}</span>}
       </div>
     </section>
-  );
-}
-
-function VerifyStatusPanel(props: { status: MergeVerifyStatus; copy: typeof text.zh }) {
-  if (!props.status) return null;
-  if (props.status === "loading") {
-    return (
-      <div className="verify-status verify-loading">
-        <RotateCw size={16} className="status-icon" />
-        <span>{props.copy.verifyingManifest}</span>
-      </div>
-    );
-  }
-  if (props.status === "error") {
-    return (
-      <div className="verify-status verify-failed">
-        <TriangleAlert size={16} />
-        <span>{props.copy.manifestInvalid}</span>
-      </div>
-    );
-  }
-  const result = props.status;
-  if (!result.ok) {
-    const issues = [
-      ...result.missing_parts.map((p) => `${props.copy.missingParts}: ${fileName(p)}`),
-      ...result.corrupted_parts.map((p) => `${props.copy.corruptedParts}: ${fileName(p)}`)
-    ];
-    return (
-      <div className="verify-status verify-failed">
-        <TriangleAlert size={16} />
-        <div className="verify-summary">
-          <strong>{props.copy.verifyFailed}</strong>
-          <ul>{issues.map((item) => <li key={item}>{item}</li>)}</ul>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="verify-status verify-ok">
-      <CheckCircle2 size={16} />
-      <div className="verify-summary">
-        <strong>{props.copy.verifyOk}</strong>
-        <span>{props.copy.partsOk}</span>
-      </div>
-    </div>
   );
 }
 

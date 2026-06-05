@@ -548,68 +548,6 @@ h2 {
   background: #edf8f6;
 }
 
-.verify-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid #d8dee4;
-  border-radius: 8px;
-  padding: 10px 11px;
-  margin-bottom: 12px;
-  font-size: 13px;
-}
-
-.verify-status.verify-loading {
-  border-color: #e0e5ec;
-  color: #57606a;
-  background: #fbfcfe;
-  align-items: center;
-}
-
-.verify-status.verify-loading .status-icon {
-  animation: spin 1s linear infinite;
-}
-
-.verify-status.verify-ok {
-  border-color: #bde8d8;
-  color: #0d6b4f;
-  background: #f2fbf7;
-  align-items: center;
-}
-
-.verify-status.verify-failed {
-  border-color: #ffd5cb;
-  color: #a13b28;
-  background: #fff7f4;
-}
-
-.verify-summary {
-  min-width: 0;
-}
-
-.verify-summary strong {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 3px;
-  color: inherit;
-}
-
-.verify-summary span {
-  color: inherit;
-  opacity: 0.85;
-}
-
-.verify-summary ul {
-  margin: 6px 0 0;
-  padding-left: 0;
-  list-style: none;
-}
-
-.verify-summary li {
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
 .status-icon {
   flex: 0 0 auto;
 }
