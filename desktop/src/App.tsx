@@ -143,6 +143,7 @@ const text = {
     missingParts: "缺失分片",
     corruptedParts: "损坏分片",
     noIssues: "未发现问题",
+    verifyingManifest: "校验中...",
     openOutputFolder: "打开输出目录",
     partPreview: "分片预览",
     moreParts: "还有更多分片未显示",
@@ -201,6 +202,7 @@ const text = {
     missingParts: "Missing parts",
     corruptedParts: "Corrupted parts",
     noIssues: "No issues found",
+    verifyingManifest: "Verifying...",
     openOutputFolder: "Open output folder",
     partPreview: "Part preview",
     moreParts: "More parts not shown",
@@ -361,26 +363,40 @@ export default function App() {
   async function runMerge() {
     const validation = validateMerge();
     if (validation) return showError("merge", validation);
-    await runTask("merge", async (taskId) => {
+
+    setBusy(true);
+    setPage("merge", { status: copy.verifyingManifest, details: null });
+
+    let verified: VerifyResult;
+    try {
       rememberDir("manifestDir", parentDir(manifestPath.trim()));
-      const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
-      if (!verified.ok) {
-        setPage("merge", {
-          status: copy.verifyFailed,
-          details: {
-            title: copy.verifyFailed,
-            items: [
-              { label: copy.missingParts, value: String(verified.missing_parts.length) },
-              { label: copy.corruptedParts, value: String(verified.corrupted_parts.length) }
-            ],
-            issues: [
-              ...verified.missing_parts.map((p) => `${copy.missingParts}: ${fileName(p)}`),
-              ...verified.corrupted_parts.map((p) => `${copy.corruptedParts}: ${fileName(p)}`)
-            ]
-          }
-        });
-        return;
-      }
+      verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
+    } catch (error) {
+      showError("merge", friendlyError(String(error), copy));
+      setBusy(false);
+      return;
+    }
+
+    if (!verified.ok) {
+      setPage("merge", {
+        status: copy.verifyFailed,
+        details: {
+          title: copy.verifyFailed,
+          items: [
+            { label: copy.missingParts, value: String(verified.missing_parts.length) },
+            { label: copy.corruptedParts, value: String(verified.corrupted_parts.length) }
+          ],
+          issues: [
+            ...verified.missing_parts.map((p) => `${copy.missingParts}: ${fileName(p)}`),
+            ...verified.corrupted_parts.map((p) => `${copy.corruptedParts}: ${fileName(p)}`)
+          ]
+        }
+      });
+      setBusy(false);
+      return;
+    }
+
+    await runTask("merge", async (taskId) => {
       const summary = await invoke<ManifestSummary>("manifest_summary", { manifestPath: manifestPath.trim() });
       const outputPath = defaultMergeOutputPath(manifestPath.trim(), summary.original_file_name);
       const output = await invoke<string>("merge", {
