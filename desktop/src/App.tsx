@@ -54,15 +54,55 @@ type ProgressEvent = {
   progress: TaskProgress;
 };
 
+type CopyKey =
+  | "cancelled"
+  | "chooseInput"
+  | "chooseManifest"
+  | "corruptedParts"
+  | "error"
+  | "fileName"
+  | "fileSize"
+  | "invalidHeaderFormat"
+  | "invalidLines"
+  | "invalidMaxParts"
+  | "invalidOption"
+  | "invalidParts"
+  | "invalidSize"
+  | "invalidSplitPlan"
+  | "manifestPath"
+  | "manifestInvalid"
+  | "mergeDone"
+  | "missingParts"
+  | "originalHash"
+  | "outputPath"
+  | "outputExists"
+  | "partCount"
+  | "pathMissing"
+  | "running"
+  | "splitDone"
+  | "tooManyParts"
+  | "unknownError"
+  | "verifyFailed"
+  | "verifyOk";
+
+type PageStatus =
+  | { kind: "cancelled" }
+  | { kind: "error"; message?: string; messageKey?: CopyKey }
+  | { kind: "mergeDone"; output: string }
+  | { kind: "running" }
+  | { kind: "splitDone"; count: number }
+  | { kind: "verifyFailed" }
+  | { kind: "verifyOk" };
+
 type DetailPanel = {
-  title: string;
-  items: Array<{ label: string; value: string }>;
+  titleKey: CopyKey;
+  items: Array<{ labelKey: CopyKey; value: string }>;
   parts?: SplitManifest["parts"];
-  issues?: string[];
+  issues?: Array<{ key: CopyKey; value?: string }>;
 };
 
 type PageState = {
-  status: string;
+  status: PageStatus | null;
   details: DetailPanel | null;
   outputPath?: string;
 };
@@ -234,7 +274,7 @@ const text = {
   }
 };
 
-const emptyPageState: PageState = { status: "", details: null };
+const emptyPageState: PageState = { status: null, details: null };
 
 export default function App() {
   const [recentDirs, setRecentDirs] = useState<RecentDirs>(loadRecentDirs);
@@ -377,16 +417,16 @@ export default function App() {
       });
       const manifest = joinPath(output, `${result.original_file_name}.manifest.json`);
       setPage("split", {
-        status: `${copy.splitDone}: ${formatNumber(result.parts.length)}`,
+        status: { kind: "splitDone", count: result.parts.length },
         outputPath: output,
         details: {
-          title: copy.splitDone,
+          titleKey: "splitDone",
           items: [
-            { label: copy.fileName, value: result.original_file_name },
-            { label: copy.fileSize, value: formatBytes(result.original_size) },
-            { label: copy.partCount, value: formatNumber(result.parts.length) },
-            { label: copy.manifestPath, value: manifest },
-            { label: copy.originalHash, value: shortHash(result.original_sha256) }
+            { labelKey: "fileName", value: result.original_file_name },
+            { labelKey: "fileSize", value: formatBytes(result.original_size) },
+            { labelKey: "partCount", value: formatNumber(result.parts.length) },
+            { labelKey: "manifestPath", value: manifest },
+            { labelKey: "originalHash", value: shortHash(result.original_sha256) }
           ],
           parts: result.parts
         }
@@ -409,15 +449,15 @@ export default function App() {
         overwrite
       });
       setPage("merge", {
-        status: `${copy.mergeDone}: ${output}`,
+        status: { kind: "mergeDone", output },
         outputPath: output,
         details: {
-          title: copy.mergeDone,
+          titleKey: "mergeDone",
           items: [
-            { label: copy.outputPath, value: output },
-            { label: copy.manifestPath, value: manifestPath.trim() }
+            { labelKey: "outputPath", value: output },
+            { labelKey: "manifestPath", value: manifestPath.trim() }
           ],
-          issues: [copy.verifyOk]
+          issues: [{ key: "verifyOk" }]
         }
       });
     });
@@ -431,14 +471,14 @@ export default function App() {
     });
     setBusy(true);
     setCurrentTaskId(taskId);
-    setPage(target, { status: copy.running, details: null });
+    setPage(target, { status: { kind: "running" }, details: null });
     setProgress(target, null);
     try {
       await task(taskId);
     } catch (error) {
       const message = friendlyError(String(error), copy);
-      if (message === copy.cancelled) {
-        setPage(target, { status: message, details: null });
+      if (message === "cancelled") {
+        setPage(target, { status: { kind: "cancelled" }, details: null });
       } else {
         showError(target, message);
       }
@@ -466,8 +506,8 @@ export default function App() {
     setProgressState((current) => ({ ...current, [target]: progress }));
   }
 
-  function showError(target: View, message: string) {
-    setPage(target, { status: `${copy.error}: ${message}`, details: null });
+  function showError(target: View, message: CopyKey | string) {
+    setPage(target, { status: errorStatus(message), details: null });
   }
 
   function rememberDir(key: keyof RecentDirs, dir: string) {
@@ -482,32 +522,32 @@ export default function App() {
   }
 
   async function validateSplit() {
-    if (!inputPath.trim()) return copy.chooseInput;
-    if (!parentDir(inputPath.trim())) return copy.chooseInput;
+    if (!inputPath.trim()) return "chooseInput";
+    if (!parentDir(inputPath.trim())) return "chooseInput";
     const partSize = sizeBytes(sizeValue, sizeUnit);
-    if (mode === "size" && !partSize) return copy.invalidSize;
-    if (!maxParts || maxParts < 2) return copy.invalidMaxParts;
+    if (mode === "size" && !partSize) return "invalidSize";
+    if (!maxParts || maxParts < 2) return "invalidMaxParts";
     if (mode === "size" && partSize) {
       try {
         const inputSize = await invoke<number>("file_size", { path: inputPath.trim() });
         if (Math.ceil(inputSize / partSize) > maxParts) {
-          return copy.tooManyParts;
+          return "tooManyParts";
         }
       } catch {
-        return copy.pathMissing;
+        return "pathMissing";
       }
     }
     const count = parseIntegerInput(countValue);
     const lines = parseIntegerInput(lineValue);
-    if (mode === "parts" && (!count || count < 2)) return copy.invalidParts;
-    if (mode === "parts" && count && count > maxParts) return copy.tooManyParts;
-    if (mode === "lines" && (!lines || lines < 1)) return copy.invalidLines;
-    if (mode === "lines" && repeatHeader && !supportsRepeatHeader(inputPath)) return copy.invalidHeaderFormat;
+    if (mode === "parts" && (!count || count < 2)) return "invalidParts";
+    if (mode === "parts" && count && count > maxParts) return "tooManyParts";
+    if (mode === "lines" && (!lines || lines < 1)) return "invalidLines";
+    if (mode === "lines" && repeatHeader && !supportsRepeatHeader(inputPath)) return "invalidHeaderFormat";
     return "";
   }
 
   function validateMerge() {
-    if (!manifestPath.trim()) return copy.chooseManifest;
+    if (!manifestPath.trim()) return "chooseManifest";
     return "";
   }
 
@@ -646,9 +686,9 @@ export default function App() {
             </div>
               </form>
             )}
-            <footer className={`statusbar ${statusClass(activeState.status, copy)}`}>
-              {statusIcon(activeState.status, copy)}
-              <span>{activeState.status || copy.idle}</span>
+            <footer className={`statusbar ${statusClass(activeState.status)}`}>
+              {statusIcon(activeState.status)}
+              <span>{statusText(activeState.status, copy)}</span>
             </footer>
             {activeState.outputPath && !busy && (
               <button className="open-folder-btn" type="button" onClick={() => { invoke("open_folder", { path: activeState.outputPath }); }}>
@@ -772,19 +812,23 @@ function ResultPanel(props: { details: DetailPanel; copy: typeof text.zh }) {
     <section className="details">
       <div className="details-title">
         <FileJson size={17} />
-        <h2>{props.details.title}</h2>
+        <h2>{props.copy[props.details.titleKey]}</h2>
       </div>
       <dl className="result-grid">
         {props.details.items.map((item) => (
-          <div key={item.label}>
-            <dt>{item.label}</dt>
+          <div key={item.labelKey}>
+            <dt>{props.copy[item.labelKey]}</dt>
             <dd title={item.value}>{item.value}</dd>
           </div>
         ))}
       </dl>
       {props.details.issues && (
         <div className="issue-list">
-          {props.details.issues.map((issue) => <span key={issue}>{issue}</span>)}
+          {props.details.issues.map((issue) => (
+            <span key={`${issue.key}-${issue.value ?? ""}`}>
+              {issue.value ? `${props.copy[issue.key]}: ${issue.value}` : props.copy[issue.key]}
+            </span>
+          ))}
         </div>
       )}
       {shownParts.length > 0 && (
@@ -803,35 +847,55 @@ function ResultPanel(props: { details: DetailPanel; copy: typeof text.zh }) {
   );
 }
 
-function statusClass(status: string, copy: typeof text.zh) {
-  if (status.startsWith(copy.error) || status === copy.verifyFailed) return "error";
-  if (status.includes(copy.splitDone) || status.includes(copy.mergeDone) || status === copy.verifyOk) return "success";
-  if (status === copy.running) return "running";
+function statusClass(status: PageStatus | null) {
+  if (status?.kind === "error" || status?.kind === "verifyFailed") return "error";
+  if (status?.kind === "splitDone" || status?.kind === "mergeDone" || status?.kind === "verifyOk") return "success";
+  if (status?.kind === "running") return "running";
   return "";
 }
 
-function statusIcon(status: string, copy: typeof text.zh) {
+function statusIcon(status: PageStatus | null) {
   const className = "status-icon";
-  if (status.startsWith(copy.error) || status === copy.verifyFailed) return <TriangleAlert className={className} size={16} />;
-  if (status.includes(copy.splitDone) || status.includes(copy.mergeDone) || status === copy.verifyOk) return <CheckCircle2 className={className} size={16} />;
-  if (status === copy.running) return <RotateCw className={className} size={16} />;
+  if (status?.kind === "error" || status?.kind === "verifyFailed") return <TriangleAlert className={className} size={16} />;
+  if (status?.kind === "splitDone" || status?.kind === "mergeDone" || status?.kind === "verifyOk") return <CheckCircle2 className={className} size={16} />;
+  if (status?.kind === "running") return <RotateCw className={className} size={16} />;
   return <FileJson className={className} size={16} />;
 }
 
-function friendlyError(error: string, copy: typeof text.zh) {
+function statusText(status: PageStatus | null, copy: typeof text.zh) {
+  if (!status) return copy.idle;
+  if (status.kind === "cancelled") return copy.cancelled;
+  if (status.kind === "error") return `${copy.error}: ${status.messageKey ? copy[status.messageKey] : status.message}`;
+  if (status.kind === "mergeDone") return `${copy.mergeDone}: ${status.output}`;
+  if (status.kind === "running") return copy.running;
+  if (status.kind === "splitDone") return `${copy.splitDone}: ${formatNumber(status.count)}`;
+  if (status.kind === "verifyFailed") return copy.verifyFailed;
+  return copy.verifyOk;
+}
+
+function errorStatus(message: CopyKey | string): PageStatus {
+  if (isCopyKey(message)) return { kind: "error", messageKey: message };
+  return { kind: "error", message };
+}
+
+function isCopyKey(value: string): value is CopyKey {
+  return value in text.zh;
+}
+
+function friendlyError(error: string, _copy: typeof text.zh): CopyKey | string {
   const normalized = error.toLowerCase();
-  if (normalized.includes("task was cancelled")) return copy.cancelled;
+  if (normalized.includes("task was cancelled")) return "cancelled";
   if (
     normalized.includes("empty file cannot be split") ||
     normalized.includes("fewer than two parts") ||
     normalized.includes("maximum non-empty parts") ||
     normalized.includes("more than")
   ) {
-    return copy.invalidSplitPlan;
+    return "invalidSplitPlan";
   }
-  if (normalized.includes("repeat header is only supported")) return copy.invalidHeaderFormat;
-  if (normalized.includes("output already exists")) return copy.outputExists;
-  if (normalized.includes("manifest json") || normalized.includes("expected value")) return copy.manifestInvalid;
+  if (normalized.includes("repeat header is only supported")) return "invalidHeaderFormat";
+  if (normalized.includes("output already exists")) return "outputExists";
+  if (normalized.includes("manifest json") || normalized.includes("expected value")) return "manifestInvalid";
   if (
     normalized.includes("invalid size number") ||
     normalized.includes("unsupported size unit") ||
@@ -841,12 +905,12 @@ function friendlyError(error: string, copy: typeof text.zh) {
     normalized.includes("unknown split mode") ||
     normalized.includes("invalid option")
   ) {
-    return copy.invalidOption;
+    return "invalidOption";
   }
   if (normalized.includes("input is not a file") || normalized.includes("no such file") || normalized.includes("os error 2")) {
-    return copy.pathMissing;
+    return "pathMissing";
   }
-  if (normalized.includes("permission denied") || normalized.includes("access is denied")) return copy.unknownError;
+  if (normalized.includes("permission denied") || normalized.includes("access is denied")) return "unknownError";
   return error;
 }
 
