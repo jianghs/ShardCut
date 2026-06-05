@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
@@ -208,6 +209,7 @@ export default function App() {
   const [language, setLanguage] = useState<Language>("zh");
   const [busy, setBusy] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [pageState, setPageState] = useState<Record<View, PageState>>({
     split: emptyPageState,
     merge: emptyPageState,
@@ -228,6 +230,40 @@ export default function App() {
     () => `${copy.approx} ${formatBytes(sizeBytes(sizeValue, sizeUnit) || 0)}`,
     [copy, sizeUnit, sizeValue]
   );
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+    void getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        setDragActive(true);
+        return;
+      }
+      if (event.payload.type === "leave") {
+        setDragActive(false);
+        return;
+      }
+      setDragActive(false);
+      const [path] = event.payload.paths;
+      if (!path) return;
+      if (view === "merge" && path.toLowerCase().endsWith(".json")) {
+        setManifestPath(path);
+        return;
+      }
+      setInputPath(path);
+      if (!outputDir.trim()) setOutputDir(parentDir(path));
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [outputDir, view]);
 
   async function chooseInputFile() {
     const selected = await open({ multiple: false, directory: false });
@@ -446,7 +482,7 @@ export default function App() {
         </header>
 
         {view === "split" && (
-          <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
+          <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
             <PathField label={copy.inputFile} value={inputPath} onChange={(value) => { setInputPath(value); if (!outputDir.trim()) setOutputDir(parentDir(value)); }} onBrowse={chooseInputFile} browseText={copy.browse} />
             <PathField label={copy.outputDir} value={outputDir} onChange={setOutputDir} onBrowse={chooseOutputFolder} browseText={copy.browse} />
 
@@ -511,7 +547,7 @@ export default function App() {
         )}
 
         {view === "merge" && (
-          <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
+          <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
             <PathField label={copy.manifest} value={manifestPath} onChange={setManifestPath} onBrowse={chooseManifestFile} browseText={copy.browse} />
             <PathField label={copy.outputFile} value={mergeOut} onChange={setMergeOut} onBrowse={chooseRestoreFile} browseText={copy.browse} />
             <div className="command-row">

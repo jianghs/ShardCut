@@ -169,6 +169,7 @@ h2 {
 }
 
 .tool-panel {
+  position: relative;
   width: 100%;
   max-width: 940px;
   border: 1px solid #d8dee4;
@@ -176,6 +177,11 @@ h2 {
   background: #ffffff;
   padding: 20px;
   box-shadow: 0 8px 22px rgba(31, 35, 40, 0.06);
+}
+
+.tool-panel.drag-active {
+  border-color: #0f6b70;
+  box-shadow: 0 0 0 3px rgba(15, 107, 112, 0.13), 0 8px 22px rgba(31, 35, 40, 0.06);
 }
 
 .title-block,
