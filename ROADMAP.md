@@ -25,12 +25,8 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [ ] Show manifest and part integrity status on the merge page.
 - [ ] Centralize all UI and validation strings for English and Chinese localization.
 
-## Phase 3: File Capabilities
+## Phase 3: Verification Capabilities
 
-- [ ] Support directory packaging before splitting.
-- [ ] Add optional compression for logs, CSV files, TSV files, and text files.
-- [ ] Add optional encrypted parts for sensitive file transfer.
-- [ ] Support custom part naming templates.
 - [ ] Export standalone checksum files, such as `.sha256`.
 
 ## Phase 4: Release And Productization
@@ -38,10 +34,8 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [x] Add GitHub Actions builds for the Windows portable release.
 - [x] Document the Windows portable build flow and rebuild caveat for running executables.
 - [ ] Automatically generate release archives and changelogs.
-- [ ] Add optional update checks.
 - [ ] Add Windows code signing.
 - [ ] Add project screenshots and usage GIFs to the README.
-- [ ] Create a simple download page or website.
 
 ## Recommended Next Iteration
 
