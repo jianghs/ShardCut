@@ -13,12 +13,12 @@
     "windows": [
       {
         "title": "ShardCut",
-        "width": 1180,
-        "height": 760,
-        "minWidth": 1180,
-        "minHeight": 760,
-        "maxWidth": 1180,
-        "maxHeight": 760,
+        "width": 980,
+        "height": 620,
+        "minWidth": 980,
+        "minHeight": 620,
+        "maxWidth": 980,
+        "maxHeight": 620,
         "resizable": false,
         "maximizable": false,
         "center": true

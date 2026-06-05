@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -214,6 +214,7 @@ export default function App() {
   const [overwrite, setOverwrite] = useState(false);
   const [language, setLanguage] = useState<Language>("zh");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [dragActiveTarget, setDragActiveTarget] = useState<"input" | "manifest" | null>(null);
@@ -239,6 +240,18 @@ export default function App() {
   }, [recentDirs]);
 
   useEffect(() => {
+    if (!settingsOpen) return;
+    function closeSettings(event: MouseEvent) {
+      if (!settingsRef.current?.contains(event.target as Node)) {
+        setSettingsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", closeSettings);
+    return () => document.removeEventListener("mousedown", closeSettings);
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
     let disposed = false;
     let cleanup: (() => void) | null = null;
     void getCurrentWebview().onDragDropEvent((event) => {
@@ -470,7 +483,7 @@ export default function App() {
               {copy.merge}
             </button>
           </div>
-          <div className="settings-wrap">
+          <div className="settings-wrap" ref={settingsRef}>
             <button type="button" className="icon-button" aria-label={copy.settings} onClick={() => setSettingsOpen((open) => !open)}>
               <Settings size={18} />
             </button>
@@ -492,13 +505,15 @@ export default function App() {
           </div>
         </header>
 
-        <div className="mode-heading">
-          {view === "split" ? <Scissors size={21} /> : <SplitSquareHorizontal size={21} />}
-          <h1>{view === "split" ? copy.split : copy.merge}</h1>
-        </div>
+        <div className="workbench">
+          <section className="operation-pane">
+            <div className="mode-heading">
+              {view === "split" ? <Scissors size={21} /> : <SplitSquareHorizontal size={21} />}
+              <h1>{view === "split" ? copy.split : copy.merge}</h1>
+            </div>
 
-        {view === "split" && (
-          <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
+            {view === "split" && (
+              <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
             <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} />
 
             <div className="field-row">
@@ -558,25 +573,29 @@ export default function App() {
               {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><Play size={16} />{copy.startSplit}</button>
             </div>
-          </form>
-        )}
+              </form>
+            )}
 
-        {view === "merge" && (
-          <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
+            {view === "merge" && (
+              <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
             <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} />
             <div className="command-row">
               {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
             </div>
-          </form>
-        )}
+              </form>
+            )}
+          </section>
 
-        <footer className={`statusbar ${statusClass(activeState.status, copy)}`}>
-          {statusIcon(activeState.status, copy)}
-          <span>{activeState.status || copy.idle}</span>
-        </footer>
-        {activeProgress && <ProgressPanel progress={activeProgress} />}
-        {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
+          <aside className="feedback-pane">
+            <footer className={`statusbar ${statusClass(activeState.status, copy)}`}>
+              {statusIcon(activeState.status, copy)}
+              <span>{activeState.status || copy.idle}</span>
+            </footer>
+            {activeProgress && <ProgressPanel progress={activeProgress} />}
+            {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
+          </aside>
+        </div>
       </section>
     </main>
   );
@@ -856,3 +875,4 @@ function joinPath(folder: string, fileName: string) {
   const separator = folder.includes("\\") ? "\\" : "/";
   return `${folder.replace(/[\\/]+$/, "")}${separator}${fileName}`;
 }
+
