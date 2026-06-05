@@ -21,7 +21,7 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [x] Support hidden-but-usable vertical scrolling for fixed-size desktop windows.
 - [x] Wrap long result paths, hashes, and part names instead of truncating them.
 - [ ] Add a persistent task history view.
-- [ ] Add an "open output folder" action after split and merge.
+- [x] Add an "open output folder" action after split and merge.
 - [ ] Show manifest and part integrity status on the merge page.
 - [ ] Centralize all UI and validation strings for English and Chinese localization.
 
@@ -44,5 +44,5 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [x] Add drag-and-drop input and recent directory memory.
 - [x] Add GitHub Actions for the Windows portable release.
 - [x] Polish the desktop file picker/dropzone, inline progress/results, and fixed-window scrolling.
-- [ ] Add open-output-folder actions after successful split and merge.
+- [x] Add open-output-folder actions after successful split and merge.
 - [ ] Add desktop screenshots or GIFs to the README.

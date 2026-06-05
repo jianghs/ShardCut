@@ -77,3 +77,7 @@ Single file, ~180 lines. clap derive with three subcommands (`split`, `merge`, `
 ### Test patterns
 
 All tests are integration-style in `core/src/lib.rs` (`#[cfg(test)] mod tests`). They use `tempfile::tempdir()` for isolation and test round-trip (split → merge → assert bytes equal), cancellation cleanup (no `.tmp` files left), validation rejection, and edge cases (exact boundaries, no trailing newline, header-only files).
+
+## Workflow rules
+
+- **When a ROADMAP.md item is completed**, mark it `[x]` in ROADMAP.md. If the item appears in both Phase and Recommended Next Iteration sections, update both.
