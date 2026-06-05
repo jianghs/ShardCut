@@ -7,6 +7,10 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
@@ -34,6 +38,8 @@ pub enum ShardCutError {
     },
     #[error("merged file hash mismatch: expected {expected}, got {actual}")]
     HashMismatch { expected: String, actual: String },
+    #[error("task was cancelled")]
+    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, ShardCutError>;
@@ -66,6 +72,25 @@ pub struct MergeOptions {
     pub manifest_path: PathBuf,
     pub output_path: PathBuf,
     pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -134,6 +159,14 @@ pub fn split_file(options: SplitOptions) -> Result<Manifest> {
 
 pub fn split_file_with_progress(
     options: SplitOptions,
+    on_progress: impl FnMut(TaskProgress),
+) -> Result<Manifest> {
+    split_file_with_progress_and_cancellation(options, CancellationToken::new(), on_progress)
+}
+
+pub fn split_file_with_progress_and_cancellation(
+    options: SplitOptions,
+    cancellation: CancellationToken,
     mut on_progress: impl FnMut(TaskProgress),
 ) -> Result<Manifest> {
     validate_split_options(&options)?;
@@ -151,6 +184,7 @@ pub fn split_file_with_progress(
             original_size,
             original_file_name,
             bytes,
+            &cancellation,
             &mut on_progress,
         )?,
         SplitMode::ByParts { count } => {
@@ -164,6 +198,7 @@ pub fn split_file_with_progress(
                 original_size,
                 original_file_name,
                 bytes,
+                &cancellation,
                 &mut on_progress,
             )?
         }
@@ -176,6 +211,7 @@ pub fn split_file_with_progress(
             original_file_name,
             lines_per_part,
             repeat_header,
+            &cancellation,
             &mut on_progress,
         )?,
     };
@@ -202,6 +238,14 @@ pub fn merge_file(options: MergeOptions) -> Result<PathBuf> {
 
 pub fn merge_file_with_progress(
     options: MergeOptions,
+    on_progress: impl FnMut(TaskProgress),
+) -> Result<PathBuf> {
+    merge_file_with_progress_and_cancellation(options, CancellationToken::new(), on_progress)
+}
+
+pub fn merge_file_with_progress_and_cancellation(
+    options: MergeOptions,
+    cancellation: CancellationToken,
     mut on_progress: impl FnMut(TaskProgress),
 ) -> Result<PathBuf> {
     let manifest = read_manifest(&options.manifest_path)?;
@@ -216,12 +260,14 @@ pub fn merge_file_with_progress(
         .unwrap_or_else(|| PathBuf::from("."));
     let tmp_path = tmp_path_for(&output_path);
     ensure_output_allowed(&tmp_path, true)?;
+    let mut tmp_guard = TempOutput::new(tmp_path);
 
-    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, File::create(&tmp_path)?);
+    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, File::create(tmp_guard.path())?);
     let mut merged_hasher = Sha256::new();
     let mut bytes_done = 0u64;
 
     for part in &manifest.parts {
+        check_cancelled(&cancellation)?;
         let part_path = manifest_dir.join(&part.file_name);
         if !part_path.exists() {
             return Err(ShardCutError::MissingPart(part_path));
@@ -236,6 +282,7 @@ pub fn merge_file_with_progress(
             None,
         );
         let actual = sha256_file(&part_path)?;
+        check_cancelled(&cancellation)?;
         if actual != part.sha256 {
             return Err(ShardCutError::CorruptedPart {
                 path: part_path,
@@ -262,12 +309,14 @@ pub fn merge_file_with_progress(
                     None,
                 );
             },
+            &cancellation,
         )?;
     }
 
+    check_cancelled(&cancellation)?;
     writer.flush()?;
     drop(writer);
-    fs::rename(&tmp_path, &output_path)?;
+    tmp_guard.commit(&output_path)?;
 
     let actual_hash = hex_digest(merged_hasher.finalize());
     if actual_hash != manifest.original_sha256 {
@@ -389,6 +438,7 @@ fn split_by_byte_limit(
     original_size: u64,
     original_file_name: String,
     byte_limit: u64,
+    cancellation: &CancellationToken,
     on_progress: &mut impl FnMut(TaskProgress),
 ) -> Result<Manifest> {
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(&options.input_path)?);
@@ -411,15 +461,18 @@ fn split_by_byte_limit(
         parts.push(part);
     } else {
         loop {
+            check_cancelled(cancellation)?;
             let part_file_name = part_name(&original_file_name, part_index);
             let part_path = options.output_dir.join(&part_file_name);
             ensure_output_allowed(&part_path, options.overwrite)?;
             let tmp_path = tmp_path_for(&part_path);
+            let mut tmp_guard = TempOutput::new(tmp_path);
             let mut writer = None;
             let mut part_hasher = Sha256::new();
             let mut part_size = 0u64;
 
             while part_size < byte_limit {
+                check_cancelled(cancellation)?;
                 let to_read = cmp::min(buffer.len() as u64, byte_limit - part_size) as usize;
                 let read = reader.read(&mut buffer[..to_read])?;
                 if read == 0 {
@@ -429,7 +482,7 @@ fn split_by_byte_limit(
                 if writer.is_none() {
                     writer = Some(BufWriter::with_capacity(
                         BUFFER_SIZE,
-                        File::create(&tmp_path)?,
+                        File::create(tmp_guard.path())?,
                     ));
                 }
                 writer
@@ -458,7 +511,7 @@ fn split_by_byte_limit(
             let mut writer = writer.expect("non-empty part must have a writer");
             writer.flush()?;
             drop(writer);
-            fs::rename(tmp_path, &part_path)?;
+            tmp_guard.commit(&part_path)?;
             parts.push(PartManifest {
                 index: part_index,
                 file_name: part_file_name,
@@ -491,6 +544,7 @@ fn split_by_lines(
     original_file_name: String,
     lines_per_part: u64,
     repeat_header: bool,
+    cancellation: &CancellationToken,
     on_progress: &mut impl FnMut(TaskProgress),
 ) -> Result<Manifest> {
     let file = File::open(&options.input_path)?;
@@ -528,6 +582,7 @@ fn split_by_lines(
 
     let mut buffer = vec![0u8; BUFFER_SIZE];
     loop {
+        check_cancelled(cancellation)?;
         let read = reader.read(&mut buffer)?;
         if read == 0 {
             break;
@@ -642,10 +697,11 @@ struct ActivePart {
     file_name: String,
     path: PathBuf,
     tmp_path: PathBuf,
-    writer: BufWriter<File>,
+    writer: Option<BufWriter<File>>,
     hasher: Sha256,
     size: u64,
     lines: u64,
+    committed: bool,
 }
 
 impl ActivePart {
@@ -666,10 +722,11 @@ impl ActivePart {
             file_name,
             path,
             tmp_path,
-            writer,
+            writer: Some(writer),
             hasher: Sha256::new(),
             size: 0,
             lines: 0,
+            committed: false,
         };
         if let Some(header) = header {
             part.write(header)?;
@@ -679,24 +736,37 @@ impl ActivePart {
     }
 
     fn write(&mut self, bytes: &[u8]) -> Result<()> {
-        self.writer.write_all(bytes)?;
+        self.writer
+            .as_mut()
+            .expect("active part writer is open")
+            .write_all(bytes)?;
         self.hasher.update(bytes);
         self.size += bytes.len() as u64;
         Ok(())
     }
 
     fn finish(mut self) -> Result<PartManifest> {
-        self.writer.flush()?;
-        drop(self.writer);
+        let mut writer = self.writer.take().expect("active part writer is open");
+        writer.flush()?;
+        drop(writer);
         fs::rename(&self.tmp_path, &self.path)?;
+        self.committed = true;
         Ok(PartManifest {
             index: self.index,
-            file_name: self.file_name,
+            file_name: self.file_name.clone(),
             size: self.size,
-            sha256: hex_digest(self.hasher.finalize()),
+            sha256: hex_digest(self.hasher.clone().finalize()),
             lines: Some(self.lines),
             completed: true,
         })
+    }
+}
+
+impl Drop for ActivePart {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = fs::remove_file(&self.tmp_path);
+        }
     }
 }
 
@@ -732,11 +802,12 @@ fn write_part(
     let part_path = output_dir.join(&part_file_name);
     ensure_output_allowed(&part_path, overwrite)?;
     let tmp_path = tmp_path_for(&part_path);
-    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, File::create(&tmp_path)?);
+    let mut tmp_guard = TempOutput::new(tmp_path);
+    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, File::create(tmp_guard.path())?);
     writer.write_all(bytes)?;
     writer.flush()?;
     drop(writer);
-    fs::rename(tmp_path, &part_path)?;
+    tmp_guard.commit(&part_path)?;
     Ok(PartManifest {
         index,
         file_name: part_file_name,
@@ -753,12 +824,14 @@ fn copy_part_for_merge(
     merged_hasher: &mut Sha256,
     skip_prefix: usize,
     mut on_chunk: impl FnMut(u64),
+    cancellation: &CancellationToken,
 ) -> Result<()> {
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(part_path)?);
     let mut buffer = vec![0u8; BUFFER_SIZE];
     let mut remaining_skip = skip_prefix;
 
     loop {
+        check_cancelled(cancellation)?;
         let read = reader.read(&mut buffer)?;
         if read == 0 {
             break;
@@ -807,6 +880,46 @@ fn emit_progress(
     });
 }
 
+fn check_cancelled(cancellation: &CancellationToken) -> Result<()> {
+    if cancellation.is_cancelled() {
+        Err(ShardCutError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+struct TempOutput {
+    path: PathBuf,
+    committed: bool,
+}
+
+impl TempOutput {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            committed: false,
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn commit(&mut self, final_path: &Path) -> Result<()> {
+        fs::rename(&self.path, final_path)?;
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for TempOutput {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
 fn repeated_header_to_skip(manifest: &Manifest, part_index: u32) -> usize {
     if part_index <= 1 {
         return 0;
@@ -824,9 +937,10 @@ fn repeated_header_to_skip(manifest: &Manifest, part_index: u32) -> usize {
 fn write_json(path: &Path, manifest: &Manifest, overwrite: bool) -> Result<()> {
     ensure_output_allowed(path, overwrite)?;
     let tmp_path = tmp_path_for(path);
-    let file = File::create(&tmp_path)?;
+    let mut tmp_guard = TempOutput::new(tmp_path);
+    let file = File::create(tmp_guard.path())?;
     serde_json::to_writer_pretty(BufWriter::new(file), manifest)?;
-    fs::rename(tmp_path, path)?;
+    tmp_guard.commit(path)?;
     Ok(())
 }
 
@@ -1149,5 +1263,80 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("repeat header"));
+    }
+
+    #[test]
+    fn cancelled_split_removes_unfinished_tmp_file() {
+        let temp = tempdir().unwrap();
+        let input_path = temp.path().join("large.bin");
+        fs::write(&input_path, vec![42u8; BUFFER_SIZE + 1024]).unwrap();
+        let out_dir = temp.path().join("parts");
+        let cancellation = CancellationToken::new();
+        let signal = cancellation.clone();
+
+        let error = split_file_with_progress_and_cancellation(
+            SplitOptions {
+                input_path,
+                output_dir: out_dir.clone(),
+                mode: SplitMode::BySize {
+                    bytes: BUFFER_SIZE as u64,
+                },
+                overwrite: false,
+            },
+            cancellation,
+            move |progress| {
+                if progress.bytes_done > 0 {
+                    signal.cancel();
+                }
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ShardCutError::Cancelled));
+        let tmp_files = fs::read_dir(out_dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "tmp"))
+            .count();
+        assert_eq!(tmp_files, 0);
+    }
+
+    #[test]
+    fn cancelled_merge_removes_unfinished_tmp_file() {
+        let temp = tempdir().unwrap();
+        let input_path = temp.path().join("large.bin");
+        fs::write(&input_path, vec![7u8; BUFFER_SIZE + 1024]).unwrap();
+        let out_dir = temp.path().join("parts");
+        split_file(SplitOptions {
+            input_path,
+            output_dir: out_dir.clone(),
+            mode: SplitMode::BySize {
+                bytes: BUFFER_SIZE as u64,
+            },
+            overwrite: false,
+        })
+        .unwrap();
+        let restored = temp.path().join("restored.bin");
+        let cancellation = CancellationToken::new();
+        let signal = cancellation.clone();
+
+        let error = merge_file_with_progress_and_cancellation(
+            MergeOptions {
+                manifest_path: out_dir.join("large.bin.manifest.json"),
+                output_path: restored.clone(),
+                overwrite: false,
+            },
+            cancellation,
+            move |progress| {
+                if progress.bytes_done > 0 {
+                    signal.cancel();
+                }
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ShardCutError::Cancelled));
+        assert!(!restored.exists());
+        assert!(!tmp_path_for(&restored).exists());
     }
 }

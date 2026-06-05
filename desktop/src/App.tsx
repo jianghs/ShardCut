@@ -207,6 +207,7 @@ export default function App() {
   const [overwrite, setOverwrite] = useState(false);
   const [language, setLanguage] = useState<Language>("zh");
   const [busy, setBusy] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [pageState, setPageState] = useState<Record<View, PageState>>({
     split: emptyPageState,
     merge: emptyPageState,
@@ -339,15 +340,31 @@ export default function App() {
       setProgress(target, event.payload.progress);
     });
     setBusy(true);
+    setCurrentTaskId(taskId);
     setPage(target, { status: copy.running, details: null });
     setProgress(target, null);
     try {
       await task(taskId);
     } catch (error) {
-      showError(target, friendlyError(String(error), copy));
+      const message = friendlyError(String(error), copy);
+      if (message === "Cancelled") {
+        setPage(target, { status: message, details: null });
+      } else {
+        showError(target, message);
+      }
     } finally {
       setBusy(false);
+      setCurrentTaskId(null);
       unlisten();
+    }
+  }
+
+  async function cancelCurrentTask() {
+    if (!currentTaskId) return;
+    try {
+      await invoke("cancel_task", { taskId: currentTaskId });
+    } catch {
+      // The task may have completed before the click is handled.
     }
   }
 
@@ -487,6 +504,7 @@ export default function App() {
             )}
 
             <div className="command-row">
+              {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><Play size={16} />{copy.startSplit}</button>
             </div>
           </form>
@@ -498,6 +516,7 @@ export default function App() {
             <PathField label={copy.outputFile} value={mergeOut} onChange={setMergeOut} onBrowse={chooseRestoreFile} browseText={copy.browse} />
             <div className="command-row">
               <button type="button" disabled={busy} onClick={() => void runVerify()}><ShieldCheck size={16} />{copy.verify}</button>
+              {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
             </div>
           </form>
@@ -674,6 +693,7 @@ function makeVerifyDetails(result: VerifyResult, copy: typeof text.zh, manifestP
 
 function friendlyError(error: string, copy: typeof text.zh) {
   const normalized = error.toLowerCase();
+  if (normalized.includes("task was cancelled")) return "Cancelled";
   if (
     normalized.includes("empty file cannot be split") ||
     normalized.includes("fewer than two parts") ||

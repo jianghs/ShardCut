@@ -1,10 +1,16 @@
 use serde::Serialize;
 use shardcut_core::{
-    merge_file_with_progress, split_file_with_progress, verify_manifest, MergeOptions, SplitMode,
-    SplitOptions, TaskProgress,
+    merge_file_with_progress_and_cancellation, split_file_with_progress_and_cancellation,
+    verify_manifest, CancellationToken, MergeOptions, SplitMode, SplitOptions, TaskProgress,
 };
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
+
+struct AppState {
+    tasks: Mutex<HashMap<String, CancellationToken>>,
+}
 
 #[derive(Clone, Serialize)]
 struct ProgressEvent {
@@ -15,6 +21,7 @@ struct ProgressEvent {
 #[tauri::command]
 fn split(
     app: AppHandle,
+    state: tauri::State<'_, AppState>,
     task_id: String,
     input_path: String,
     output_dir: String,
@@ -36,14 +43,21 @@ fn split(
         },
         _ => return Err("unknown split mode".to_string()),
     };
+    let cancellation = CancellationToken::new();
+    state
+        .tasks
+        .lock()
+        .map_err(|_| "task state is unavailable".to_string())?
+        .insert(task_id.clone(), cancellation.clone());
     let emit_task_id = task_id.clone();
-    let manifest = split_file_with_progress(
+    let result = split_file_with_progress_and_cancellation(
         SplitOptions {
             input_path: PathBuf::from(input_path),
             output_dir: PathBuf::from(output_dir),
             mode: split_mode,
             overwrite,
         },
+        cancellation,
         move |progress| {
             let _ = app.emit(
                 "task-progress",
@@ -53,26 +67,39 @@ fn split(
                 },
             );
         },
-    )
-    .map_err(|error| error.to_string())?;
+    );
+    state
+        .tasks
+        .lock()
+        .map_err(|_| "task state is unavailable".to_string())?
+        .remove(&task_id);
+    let manifest = result.map_err(|error| error.to_string())?;
     serde_json::to_value(manifest).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn merge(
     app: AppHandle,
+    state: tauri::State<'_, AppState>,
     task_id: String,
     manifest_path: String,
     output_path: String,
     overwrite: bool,
 ) -> Result<String, String> {
+    let cancellation = CancellationToken::new();
+    state
+        .tasks
+        .lock()
+        .map_err(|_| "task state is unavailable".to_string())?
+        .insert(task_id.clone(), cancellation.clone());
     let emit_task_id = task_id.clone();
-    merge_file_with_progress(
+    let result = merge_file_with_progress_and_cancellation(
         MergeOptions {
             manifest_path: PathBuf::from(manifest_path),
             output_path: PathBuf::from(output_path),
             overwrite,
         },
+        cancellation,
         move |progress| {
             let _ = app.emit(
                 "task-progress",
@@ -82,9 +109,30 @@ fn merge(
                 },
             );
         },
-    )
-    .map(|path| path.display().to_string())
-    .map_err(|error| error.to_string())
+    );
+    state
+        .tasks
+        .lock()
+        .map_err(|_| "task state is unavailable".to_string())?
+        .remove(&task_id);
+    result
+        .map(|path| path.display().to_string())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn cancel_task(state: tauri::State<'_, AppState>, task_id: String) -> Result<(), String> {
+    let tasks = state
+        .tasks
+        .lock()
+        .map_err(|_| "task state is unavailable".to_string())?;
+    match tasks.get(&task_id) {
+        Some(cancellation) => {
+            cancellation.cancel();
+            Ok(())
+        }
+        None => Err("task is not running".to_string()),
+    }
 }
 
 #[tauri::command]
@@ -97,8 +145,11 @@ fn verify(manifest_path: String) -> Result<serde_json::Value, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppState {
+            tasks: Mutex::new(HashMap::new()),
+        })
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![split, merge, verify])
+        .invoke_handler(tauri::generate_handler![split, merge, verify, cancel_task])
         .run(tauri::generate_context!())
         .expect("error while running ShardCut");
 }
