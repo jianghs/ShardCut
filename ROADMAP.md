@@ -8,6 +8,8 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [x] Add cancellable split and merge tasks.
 - [x] Clean up unfinished `.tmp` files after cancellation or failure.
 - [x] Show progress, processing speed, and estimated remaining time.
+- [x] Prevent accidentally creating too many parts (configurable max-parts limit).
+- [x] Run split/merge/verify on a blocking thread to keep the UI responsive.
 - [ ] Support task recovery from an existing manifest after interruption.
 - [ ] Improve user-facing errors for file locks, permission issues, and insufficient disk space.
 
