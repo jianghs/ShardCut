@@ -41,6 +41,8 @@ type ManifestSummary = {
   original_file_name: string;
 };
 
+const MAX_REASONABLE_PARTS = 10_000;
+
 type TaskProgress = {
   phase: "Splitting" | "Merging" | "Verifying" | "Completed";
   bytes_done: number;
@@ -116,6 +118,7 @@ const text = {
     invalidSize: "请输入有效的分片大小，例如 1024 KB 或 100 MB。",
     invalidParts: "分片数量必须是大于等于 2 的整数。",
     invalidLines: "每片行数必须是大于 0 的整数。",
+    tooManyParts: "当前分片大小会生成过多分片，请调大分片大小或改用按份数切割。",
     invalidSplitPlan: "当前切割设置不合理：请调整分片大小或分片数量，确保至少能生成 2 个非空分片。",
     invalidHeaderFormat: "重复表头仅支持 CSV、TSV、TXT 文件；请确认第一行确实是字段名或表头。",
     repeatHeaderHelp: "适用于 CSV/TSV/TXT 等第一行为表头的文本表格文件。每个分片会保留表头，合并时会自动去掉重复表头。",
@@ -172,6 +175,7 @@ const text = {
     invalidSize: "Enter a valid part size, such as 1024 KB or 100 MB.",
     invalidParts: "Part count must be an integer greater than or equal to 2.",
     invalidLines: "Lines per part must be an integer greater than 0.",
+    tooManyParts: "This part size would create too many parts. Increase the size or split by part count.",
     invalidSplitPlan: "The current split settings are not reasonable. Adjust the part size or part count so at least 2 non-empty parts can be created.",
     invalidHeaderFormat: "Repeated headers are only supported for CSV, TSV, and TXT files. Make sure the first line is truly a header.",
     repeatHeaderHelp: "Use this for CSV/TSV/TXT files where the first line is a header. Each part keeps the header, and merge removes repeated headers automatically.",
@@ -314,7 +318,7 @@ export default function App() {
   }
 
   async function runSplit() {
-    const validation = validateSplit();
+    const validation = await validateSplit();
     if (validation) return showError("split", validation);
     await runTask("split", async (taskId) => {
       const output = defaultSplitOutputDir(inputPath.trim());
@@ -441,10 +445,21 @@ export default function App() {
     return String(parseIntegerInput(lineValue));
   }
 
-  function validateSplit() {
+  async function validateSplit() {
     if (!inputPath.trim()) return copy.chooseInput;
     if (!parentDir(inputPath.trim())) return copy.chooseInput;
-    if (mode === "size" && !sizeBytes(sizeValue, sizeUnit)) return copy.invalidSize;
+    const partSize = sizeBytes(sizeValue, sizeUnit);
+    if (mode === "size" && !partSize) return copy.invalidSize;
+    if (mode === "size" && partSize) {
+      try {
+        const inputSize = await invoke<number>("file_size", { path: inputPath.trim() });
+        if (Math.ceil(inputSize / partSize) > MAX_REASONABLE_PARTS) {
+          return copy.tooManyParts;
+        }
+      } catch {
+        return copy.pathMissing;
+      }
+    }
     const count = parseIntegerInput(countValue);
     const lines = parseIntegerInput(lineValue);
     if (mode === "parts" && (!count || count < 2)) return copy.invalidParts;
@@ -585,13 +600,13 @@ export default function App() {
             </div>
               </form>
             )}
-          </section>
-
-          <aside className="feedback-pane">
             <footer className={`statusbar ${statusClass(activeState.status, copy)}`}>
               {statusIcon(activeState.status, copy)}
               <span>{activeState.status || copy.idle}</span>
             </footer>
+          </section>
+
+          <aside className="feedback-pane">
             {activeProgress && <ProgressPanel progress={activeProgress} />}
             {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
           </aside>

@@ -156,6 +156,13 @@ fn manifest_summary(manifest_path: String) -> Result<ManifestSummary, String> {
     })
 }
 
+#[tauri::command]
+fn file_size(path: String) -> Result<u64, String> {
+    std::fs::metadata(PathBuf::from(path))
+        .map(|metadata| metadata.len())
+        .map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -168,6 +175,7 @@ pub fn run() {
             merge,
             verify,
             manifest_summary,
+            file_size,
             cancel_task
         ])
         .run(tauri::generate_context!())
