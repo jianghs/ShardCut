@@ -14,7 +14,8 @@ ShardCut is a cross-platform large-file splitter and merger for Windows, Linux, 
 - Stream line-based splitting without decoding text, making it suitable for huge logs, CSV files, TSV files, and text exports.
 - Optionally repeat the first-line header for line-based CSV, TSV, and TXT splits. Merge automatically removes duplicated headers.
 - Reject invalid split plans, including empty inputs, missing paths, oversized split sizes, and unreasonable part counts.
-- Desktop app supports system file and folder pickers, friendly status messages, localized UI, and a fixed-size utility layout.
+- Desktop app supports file pickers, drag-and-drop input, recent directory memory, cancellable tasks, progress/speed/ETA display, bilingual UI, and friendly validation messages.
+- Desktop layout uses a fixed-size utility window with a sticky top bar, hidden-but-usable vertical scrolling, inline progress/results, and full wrapping for long result paths.
 
 ## Project Layout
 
@@ -101,6 +102,8 @@ After the build finishes, the executable is located at:
 target/release/shardcut-desktop.exe
 ```
 
+If the previous executable is still running, Windows may prevent the build from replacing it. Close ShardCut before rebuilding.
+
 For distribution, place `shardcut-desktop.exe` and release notes in one folder, then zip the folder. Users can unzip it and run the executable directly.
 
 ## Verification
@@ -136,4 +139,4 @@ Planned improvements are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Current Scope
 
-ShardCut `0.1.0` handles local single-file splitting and merging. It does not include directory packaging, compression, encryption, cloud sync, or network transfer. The current priority is stable, recoverable large-file processing with clear validation and strong SHA-256 verification.
+ShardCut `0.1.0` handles local single-file splitting and merging. It does not include directory packaging, compression, encryption, cloud sync, or network transfer. The current priority is stable, recoverable large-file processing with clear validation, strong SHA-256 verification, and a clean desktop workflow.

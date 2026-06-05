@@ -12,7 +12,13 @@
 
 body {
   margin: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+body::-webkit-scrollbar {
+  display: none;
 }
 
 button,
@@ -122,6 +128,9 @@ select:focus {
 }
 
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -219,22 +228,17 @@ h2 {
 
 .workbench {
   display: grid;
-  grid-template-columns: 560px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 920px);
+  justify-content: center;
   min-height: 0;
-  padding: 14px 16px 16px;
+  padding: 14px 18px 22px;
 }
 
-.operation-pane,
-.feedback-pane {
+.operation-pane {
   display: grid;
   align-content: start;
   gap: 12px;
   min-width: 0;
-}
-
-.feedback-pane {
-  padding: 0;
 }
 
 .settings-popover label {
@@ -267,23 +271,32 @@ h2 {
   gap: 8px;
 }
 
+.path-control {
+  position: relative;
+  min-width: 0;
+}
+
 .path-drop {
+  position: relative;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
   justify-content: stretch;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 70px;
+  min-height: 76px;
   border: 1px solid #d0d7de;
   border-radius: 8px;
   background: #fbfcfe;
-  padding: 9px;
+  padding: 11px 14px;
   text-align: left;
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  cursor: pointer;
 }
 
-.path-drop:hover:not(:disabled) {
+.path-drop:hover,
+.path-drop:focus-visible,
+.path-drop:focus-within {
   border-color: #8c9bab;
   background: #f8fafc;
   box-shadow: 0 1px 2px rgba(31, 35, 40, 0.08);
@@ -291,6 +304,12 @@ h2 {
 
 .path-drop.empty {
   border-style: dashed;
+  background: #ffffff;
+}
+
+.path-drop.has-file {
+  border-style: solid;
+  background: #ffffff;
 }
 
 .path-drop.drag-active {
@@ -298,6 +317,36 @@ h2 {
   border-style: solid;
   background: #edf8f6;
   box-shadow: inset 0 0 0 1px rgba(15, 107, 112, 0.18), 0 0 0 3px rgba(15, 107, 112, 0.12);
+}
+
+.path-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-color: #d8dee4;
+  border-radius: 999px;
+  color: #57606a;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 140ms ease, transform 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.path-drop:hover .path-clear,
+.path-drop:focus-within .path-clear {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.path-clear:hover:not(:disabled) {
+  border-color: #f0b8ad;
+  color: #a13b28;
+  background: #fff7f4;
 }
 
 .path-drop-icon {
@@ -308,11 +357,18 @@ h2 {
   border: 1px solid #d8dee4;
   border-radius: 8px;
   color: #0f6b70;
+  background: #f6fbfa;
+}
+
+.path-drop.empty .path-drop-icon {
+  border-style: dashed;
+  color: #57606a;
   background: #ffffff;
 }
 
 .path-drop-copy {
   min-width: 0;
+  padding-right: 28px;
 }
 
 .path-drop-title {
@@ -323,12 +379,10 @@ h2 {
 }
 
 .path-drop-value {
-  overflow: hidden;
   color: #22272e;
   font-size: 13px;
   line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .path-drop-value.empty {
@@ -578,11 +632,9 @@ h2 {
 
 .result-grid dd {
   margin: 0;
-  overflow: hidden;
   color: #22272e;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .issue-list {
@@ -594,14 +646,12 @@ h2 {
 
 .issue-list span {
   max-width: 100%;
-  overflow: hidden;
   border: 1px solid #d6e8df;
   border-radius: 999px;
   background: #f3fbf7;
   color: #17664d;
   padding: 5px 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .part-list {
@@ -626,9 +676,7 @@ h2 {
 }
 
 .part-row span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .part-row strong {

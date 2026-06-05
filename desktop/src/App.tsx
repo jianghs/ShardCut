@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -10,6 +10,8 @@ import {
   FileJson,
   ListRestart,
   Play,
+  Plus,
+  X,
   RotateCw,
   Scissors,
   Settings,
@@ -529,7 +531,7 @@ export default function App() {
 
             {view === "split" && (
               <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
-            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} />
+            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} onClear={() => setInputPath("")} clearDisabled={busy} />
 
             <div className="field-row">
               <label>{copy.mode}</label>
@@ -593,7 +595,7 @@ export default function App() {
 
             {view === "merge" && (
               <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
-            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} />
+            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} onClear={() => setManifestPath("")} clearDisabled={busy} />
             <div className="command-row">
               {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
@@ -604,12 +606,9 @@ export default function App() {
               {statusIcon(activeState.status, copy)}
               <span>{activeState.status || copy.idle}</span>
             </footer>
-          </section>
-
-          <aside className="feedback-pane">
             {activeProgress && <ProgressPanel progress={activeProgress} />}
             {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
-          </aside>
+          </section>
         </div>
       </section>
     </main>
@@ -626,24 +625,57 @@ function PathField(props: {
   dragActive?: boolean;
   icon?: ReactNode;
   onBrowse: () => Promise<void>;
+  onClear?: () => void;
+  clearDisabled?: boolean;
 }) {
+  const hasValue = props.value.trim().length > 0;
+  const selectedFileName = hasValue ? fileName(props.value) : "";
+
+  function clearPath(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (props.clearDisabled) return;
+    props.onClear?.();
+  }
+
   return (
     <div className="field-row">
       <label>{props.label}</label>
-      <button
-        className={`path-drop ${props.dragActive ? "drag-active" : ""} ${props.value ? "" : "empty"}`}
-        data-drop-target={props.dropTarget}
-        type="button"
-        onClick={() => void props.onBrowse()}
-      >
-        <div className="path-drop-icon">{props.icon}</div>
-        <div className="path-drop-copy">
-          <div className="path-drop-title">{props.dragActive ? props.dropActiveTitle : props.dropTitle}</div>
-          <div className={`path-drop-value ${props.value ? "" : "empty"}`} title={props.value}>
-            {props.value || props.emptyText}
+      <div className="path-control">
+        <div
+          className={`path-drop ${props.dragActive ? "drag-active" : ""} ${hasValue ? "has-file" : "empty"}`}
+          data-drop-target={props.dropTarget}
+          role="button"
+          tabIndex={0}
+          onClick={() => void props.onBrowse()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              void props.onBrowse();
+            }
+          }}
+        >
+          <div className="path-drop-icon">{hasValue ? props.icon : <Plus size={23} />}</div>
+          <div className="path-drop-copy">
+            <div className="path-drop-title">
+              {hasValue ? selectedFileName : (props.dragActive ? props.dropActiveTitle : props.dropTitle)}
+            </div>
+            <div className={`path-drop-value ${hasValue ? "" : "empty"}`} title={props.value}>
+              {hasValue ? props.value : props.emptyText}
+            </div>
           </div>
+          {hasValue && props.onClear && (
+            <button
+              aria-label="Clear selected file"
+              className="path-clear"
+              disabled={props.clearDisabled}
+              type="button"
+              onClick={clearPath}
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
-      </button>
+      </div>
     </div>
   );
 }
