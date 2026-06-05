@@ -220,15 +220,24 @@ h2 {
 
 .path-drop {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 104px;
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
+  justify-content: stretch;
   gap: 10px;
+  width: 100%;
   min-height: 64px;
   border: 1px solid #d0d7de;
   border-radius: 8px;
   background: #fbfcfe;
   padding: 9px;
+  text-align: left;
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.path-drop:hover:not(:disabled) {
+  border-color: #8c9bab;
+  background: #f8fafc;
+  box-shadow: 0 1px 2px rgba(31, 35, 40, 0.08);
 }
 
 .path-drop.empty {
@@ -264,22 +273,16 @@ h2 {
   line-height: 18px;
 }
 
-.path-drop input {
-  width: 100%;
-  min-height: 22px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
+.path-drop-value {
+  overflow: hidden;
   color: #22272e;
   font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.path-drop input:focus {
-  box-shadow: none;
-}
-
-.path-drop input::placeholder {
+.path-drop-value.empty {
   color: #8c959f;
 }
 
@@ -639,14 +642,6 @@ h2 {
 
   .mode-grid {
     grid-template-columns: 1fr;
-  }
-
-  .path-drop {
-    grid-template-columns: 40px minmax(0, 1fr);
-  }
-
-  .path-drop button {
-    grid-column: 1 / -1;
   }
 
   .result-grid {

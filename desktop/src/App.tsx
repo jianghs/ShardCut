@@ -226,11 +226,10 @@ export default function App() {
   const [view, setView] = useState<View>("split");
   const [mode, setMode] = useState<Mode>("size");
   const [inputPath, setInputPath] = useState("");
-  const [outputDir, setOutputDir] = useState(recentDirs.outputDir);
   const [manifestPath, setManifestPath] = useState("");
   const [mergeOut, setMergeOut] = useState("");
   const [sizeValue, setSizeValue] = useState("1");
-  const [sizeUnit, setSizeUnit] = useState<SizeUnit>("GB");
+  const [sizeUnit, setSizeUnit] = useState<SizeUnit>("KB");
   const [countValue, setCountValue] = useState("10");
   const [lineValue, setLineValue] = useState("1,000,000");
   const [repeatHeader, setRepeatHeader] = useState(false);
@@ -238,7 +237,7 @@ export default function App() {
   const [language, setLanguage] = useState<Language>("zh");
   const [busy, setBusy] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
+  const [dragActiveTarget, setDragActiveTarget] = useState<"input" | "manifest" | null>(null);
   const [pageState, setPageState] = useState<Record<View, PageState>>({
     split: emptyPageState,
     merge: emptyPageState,
@@ -269,24 +268,26 @@ export default function App() {
     let cleanup: (() => void) | null = null;
     void getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type === "enter" || event.payload.type === "over") {
-        setDragActive(true);
+        setDragActiveTarget(dropTargetAt(event.payload.position));
         return;
       }
       if (event.payload.type === "leave") {
-        setDragActive(false);
+        setDragActiveTarget(null);
         return;
       }
-      setDragActive(false);
+      const target = dropTargetAt(event.payload.position);
+      setDragActiveTarget(null);
       const [path] = event.payload.paths;
-      if (!path) return;
-      if (view === "merge" && path.toLowerCase().endsWith(".json")) {
+      if (!path || !target) return;
+      if (target === "manifest") {
+        if (!path.toLowerCase().endsWith(".json")) return;
         setManifestPath(path);
         rememberDir("manifestDir", parentDir(path));
         return;
       }
+      if (target !== "input") return;
       setInputPath(path);
       rememberDir("inputDir", parentDir(path));
-      if (!outputDir.trim()) setOutputDir(parentDir(path));
     }).then((unlisten) => {
       if (disposed) {
         unlisten();
@@ -298,7 +299,7 @@ export default function App() {
       disposed = true;
       cleanup?.();
     };
-  }, [outputDir, view]);
+  }, []);
 
   async function chooseInputFile() {
     const selected = await open({
@@ -309,19 +310,6 @@ export default function App() {
     if (typeof selected !== "string") return;
     setInputPath(selected);
     rememberDir("inputDir", parentDir(selected));
-    if (!outputDir.trim()) setOutputDir(parentDir(selected));
-  }
-
-  async function chooseOutputFolder() {
-    const selected = await open({
-      multiple: false,
-      directory: true,
-      defaultPath: recentDirs.outputDir || undefined
-    });
-    if (typeof selected === "string") {
-      setOutputDir(selected);
-      rememberDir("outputDir", selected);
-    }
   }
 
   async function chooseManifestFile() {
@@ -351,7 +339,7 @@ export default function App() {
     const validation = validateSplit();
     if (validation) return showError("split", validation);
     await runTask("split", async (taskId) => {
-      const output = outputDir.trim() || parentDir(inputPath.trim());
+      const output = defaultSplitOutputDir(inputPath.trim());
       rememberDir("inputDir", parentDir(inputPath.trim()));
       rememberDir("outputDir", output);
       const result = await invoke<SplitManifest>("split", {
@@ -490,7 +478,7 @@ export default function App() {
 
   function validateSplit() {
     if (!inputPath.trim()) return copy.chooseInput;
-    if (!outputDir.trim() && !parentDir(inputPath.trim())) return copy.chooseOutput;
+    if (!parentDir(inputPath.trim())) return copy.chooseInput;
     if (mode === "size" && !sizeBytes(sizeValue, sizeUnit)) return copy.invalidSize;
     const count = parseIntegerInput(countValue);
     const lines = parseIntegerInput(lineValue);
@@ -548,9 +536,8 @@ export default function App() {
         </header>
 
         {view === "split" && (
-          <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
-            <PathField label={copy.inputFile} value={inputPath} dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActive} icon={<FileIcon size={20} />} onChange={(value) => { setInputPath(value); if (!outputDir.trim()) setOutputDir(parentDir(value)); }} onBrowse={chooseInputFile} browseText={copy.browse} />
-            <PathField label={copy.outputDir} value={outputDir} onChange={setOutputDir} onBrowse={chooseOutputFolder} browseText={copy.browse} />
+          <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
+            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} browseText={copy.browse} />
 
             <div className="field-row">
               <label>{copy.mode}</label>
@@ -613,8 +600,8 @@ export default function App() {
         )}
 
         {view === "merge" && (
-          <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
-            <PathField label={copy.manifest} value={manifestPath} dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActive} icon={<FileJson size={20} />} onChange={setManifestPath} onBrowse={chooseManifestFile} browseText={copy.browse} />
+          <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
+            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} browseText={copy.browse} />
             <PathField label={copy.outputFile} value={mergeOut} onChange={setMergeOut} onBrowse={chooseRestoreFile} browseText={copy.browse} />
             <div className="command-row">
               <button type="button" disabled={busy} onClick={() => void runVerify()}><ShieldCheck size={16} />{copy.verify}</button>
@@ -656,13 +643,14 @@ export default function App() {
 function PathField(props: {
   label: string;
   value: string;
+  dropTarget?: "input" | "manifest";
   dropTitle?: string;
   dropActiveTitle?: string;
   emptyText?: string;
   dragActive?: boolean;
   icon?: ReactNode;
   browseText: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   onBrowse: () => Promise<void>;
 }) {
   const isDropControl = Boolean(props.dropTitle);
@@ -670,22 +658,23 @@ function PathField(props: {
     <div className="field-row">
       <label>{props.label}</label>
       {isDropControl ? (
-        <div className={`path-drop ${props.dragActive ? "drag-active" : ""} ${props.value ? "" : "empty"}`}>
+        <button
+          className={`path-drop ${props.dragActive ? "drag-active" : ""} ${props.value ? "" : "empty"}`}
+          data-drop-target={props.dropTarget}
+          type="button"
+          onClick={() => void props.onBrowse()}
+        >
           <div className="path-drop-icon">{props.icon}</div>
           <div className="path-drop-copy">
             <div className="path-drop-title">{props.dragActive ? props.dropActiveTitle : props.dropTitle}</div>
-            <input
-              aria-label={props.label}
-              value={props.value}
-              placeholder={props.emptyText}
-              onChange={(event) => props.onChange(event.target.value)}
-            />
+            <div className={`path-drop-value ${props.value ? "" : "empty"}`} title={props.value}>
+              {props.value || props.emptyText}
+            </div>
           </div>
-          <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
-        </div>
+        </button>
       ) : (
         <div className="path-input">
-          <input aria-label={props.label} value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+          <input aria-label={props.label} value={props.value} onChange={(event) => props.onChange?.(event.target.value)} />
           <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
         </div>
       )}
@@ -853,6 +842,25 @@ function loadRecentDirs(): RecentDirs {
 function defaultRestorePath(recentDirs: RecentDirs) {
   const dir = recentDirs.restoreDir || recentDirs.outputDir;
   return dir ? joinPath(dir, "restored-file") : "restored-file";
+}
+
+function defaultSplitOutputDir(inputPath: string) {
+  const dir = parentDir(inputPath);
+  const name = fileName(inputPath);
+  return joinPath(dir, `${name}.shardcut-parts`);
+}
+
+function fileName(path: string) {
+  const trimmed = path.trim().replace(/[\\/]+$/, "");
+  const index = Math.max(trimmed.lastIndexOf("\\"), trimmed.lastIndexOf("/"));
+  return index >= 0 ? trimmed.slice(index + 1) : trimmed;
+}
+
+function dropTargetAt(position: { x: number; y: number }) {
+  const scale = window.devicePixelRatio || 1;
+  const element = document.elementFromPoint(position.x / scale, position.y / scale);
+  const target = element?.closest<HTMLElement>("[data-drop-target]")?.dataset.dropTarget;
+  return target === "input" || target === "manifest" ? target : null;
 }
 
 function parseIntegerInput(input: string) {
