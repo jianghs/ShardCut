@@ -92,6 +92,8 @@ const text = {
     manifest: "Manifest 文件",
     outputFile: "恢复文件",
     browse: "浏览...",
+    dragInputHint: "也可以将文件直接拖到此窗口",
+    dragManifestHint: "也可以将 manifest JSON 直接拖到此窗口",
     startSplit: "开始切割",
     startMerge: "校验并合并",
     verify: "校验",
@@ -153,6 +155,8 @@ const text = {
     manifest: "Manifest file",
     outputFile: "Restored file",
     browse: "Browse...",
+    dragInputHint: "You can also drop a file directly onto this window.",
+    dragManifestHint: "You can also drop a manifest JSON directly onto this window.",
     startSplit: "Start split",
     startMerge: "Verify and merge",
     verify: "Verify",
@@ -536,7 +540,7 @@ export default function App() {
 
         {view === "split" && (
           <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
-            <PathField label={copy.inputFile} value={inputPath} onChange={(value) => { setInputPath(value); if (!outputDir.trim()) setOutputDir(parentDir(value)); }} onBrowse={chooseInputFile} browseText={copy.browse} />
+            <PathField label={copy.inputFile} value={inputPath} hint={copy.dragInputHint} onChange={(value) => { setInputPath(value); if (!outputDir.trim()) setOutputDir(parentDir(value)); }} onBrowse={chooseInputFile} browseText={copy.browse} />
             <PathField label={copy.outputDir} value={outputDir} onChange={setOutputDir} onBrowse={chooseOutputFolder} browseText={copy.browse} />
 
             <div className="field-row">
@@ -601,7 +605,7 @@ export default function App() {
 
         {view === "merge" && (
           <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
-            <PathField label={copy.manifest} value={manifestPath} onChange={setManifestPath} onBrowse={chooseManifestFile} browseText={copy.browse} />
+            <PathField label={copy.manifest} value={manifestPath} hint={copy.dragManifestHint} onChange={setManifestPath} onBrowse={chooseManifestFile} browseText={copy.browse} />
             <PathField label={copy.outputFile} value={mergeOut} onChange={setMergeOut} onBrowse={chooseRestoreFile} browseText={copy.browse} />
             <div className="command-row">
               <button type="button" disabled={busy} onClick={() => void runVerify()}><ShieldCheck size={16} />{copy.verify}</button>
@@ -643,6 +647,7 @@ export default function App() {
 function PathField(props: {
   label: string;
   value: string;
+  hint?: string;
   browseText: string;
   onChange: (value: string) => void;
   onBrowse: () => Promise<void>;
@@ -650,9 +655,12 @@ function PathField(props: {
   return (
     <div className="field-row">
       <label>{props.label}</label>
-      <div className="path-input">
-        <input value={props.value} onChange={(event) => props.onChange(event.target.value)} />
-        <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
+      <div>
+        <div className="path-input">
+          <input value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+          <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
+        </div>
+        {props.hint && <p className="path-hint">{props.hint}</p>}
       </div>
     </div>
   );

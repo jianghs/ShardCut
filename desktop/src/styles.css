@@ -218,6 +218,13 @@ h2 {
   gap: 8px;
 }
 
+.path-hint {
+  margin: 6px 0 0;
+  color: #69717a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .size-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 96px;
