@@ -381,6 +381,7 @@ export default function App() {
 
     setBusy(true);
     setPage("merge", { status: copy.verifyingManifest, details: null });
+    setProgress("merge", null);
 
     let verified: VerifyResult;
     try {
@@ -388,6 +389,7 @@ export default function App() {
       verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
     } catch (error) {
       showError("merge", friendlyError(String(error), copy));
+      setProgress("merge", null);
       setBusy(false);
       return;
     }
@@ -407,6 +409,7 @@ export default function App() {
           ]
         }
       });
+      setProgress("merge", null);
       setBusy(false);
       return;
     }
