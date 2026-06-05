@@ -1,28 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
   File as FileIcon,
   FileJson,
-  FolderOpen,
-  Languages,
   ListRestart,
   Play,
   RotateCw,
   Scissors,
   Settings,
-  ShieldCheck,
   SplitSquareHorizontal,
   TriangleAlert
 } from "lucide-react";
 import shardcutIcon from "./assets/shardcut-icon.png";
 
 type Mode = "size" | "parts" | "lines";
-type View = "split" | "merge" | "tasks" | "settings";
+type View = "split" | "merge";
 type Language = "zh" | "en";
 type SizeUnit = "KB" | "MB" | "GB" | "TB";
 
@@ -38,6 +35,10 @@ type VerifyResult = {
   missing_parts: string[];
   corrupted_parts: string[];
   expected_hash: string;
+};
+
+type ManifestSummary = {
+  original_file_name: string;
 };
 
 type TaskProgress = {
@@ -86,22 +87,17 @@ const text = {
   zh: {
     split: "切割",
     merge: "合并",
-    tasks: "任务",
     settings: "设置",
     inputFile: "输入文件",
-    outputDir: "输出目录",
     manifest: "Manifest 文件",
-    outputFile: "恢复文件",
-    browse: "浏览...",
-    dropInputTitle: "拖入文件或浏览选择",
-    dropManifestTitle: "拖入 Manifest JSON 或浏览选择",
+    dropInputTitle: "拖入文件或点击选择",
+    dropManifestTitle: "拖入 Manifest JSON 或点击选择",
     releaseInputDrop: "松开以使用这个文件",
     releaseManifestDrop: "松开以使用这个 Manifest",
     noFileSelected: "尚未选择文件",
     noManifestSelected: "尚未选择 Manifest",
     startSplit: "开始切割",
-    startMerge: "校验并合并",
-    verify: "校验",
+    startMerge: "开始合并",
     mode: "切割方式",
     size: "按大小",
     parts: "按份数",
@@ -115,21 +111,16 @@ const text = {
     overwrite: "允许覆盖已有输出",
     idle: "就绪",
     running: "执行中...",
-    noTasks: "暂无任务",
-    taskHint: "中断任务和恢复操作会显示在这里。",
-    settingsHint: "设置会应用到本次切割或合并。",
     chooseInput: "请选择输入文件。",
-    chooseOutput: "请选择输出目录。",
     chooseManifest: "请选择 manifest 文件。",
-    chooseRestore: "请选择恢复输出文件。",
-    invalidSize: "请输入有效的分片大小，例如 500 MB 或 1 GB。",
+    invalidSize: "请输入有效的分片大小，例如 1024 KB 或 100 MB。",
     invalidParts: "分片数量必须是大于等于 2 的整数。",
     invalidLines: "每片行数必须是大于 0 的整数。",
     invalidSplitPlan: "当前切割设置不合理：请调整分片大小或分片数量，确保至少能生成 2 个非空分片。",
     invalidHeaderFormat: "重复表头仅支持 CSV、TSV、TXT 文件；请确认第一行确实是字段名或表头。",
     repeatHeaderHelp: "适用于 CSV/TSV/TXT 等第一行为表头的文本表格文件。每个分片会保留表头，合并时会自动去掉重复表头。",
     pathMissing: "路径不存在或无法访问，请重新选择文件。",
-    outputExists: "输出文件已存在，请开启覆盖或选择其他位置。",
+    outputExists: "输出文件已存在，请开启覆盖或换一个文件。",
     manifestInvalid: "Manifest 文件无法读取或格式不正确。",
     splitDone: "切割完成",
     verifyOk: "校验通过",
@@ -147,28 +138,22 @@ const text = {
     noIssues: "未发现问题",
     partPreview: "分片预览",
     moreParts: "还有更多分片未显示",
-    preview: "预览",
     approx: "约"
   },
   en: {
     split: "Split",
     merge: "Merge",
-    tasks: "Tasks",
     settings: "Settings",
     inputFile: "Input file",
-    outputDir: "Output folder",
     manifest: "Manifest file",
-    outputFile: "Restored file",
-    browse: "Browse...",
-    dropInputTitle: "Drop file here or browse",
-    dropManifestTitle: "Drop manifest JSON here or browse",
+    dropInputTitle: "Drop file here or click to choose",
+    dropManifestTitle: "Drop manifest JSON here or click to choose",
     releaseInputDrop: "Release to use this file",
     releaseManifestDrop: "Release to use this manifest",
     noFileSelected: "No file selected",
     noManifestSelected: "No manifest selected",
     startSplit: "Start split",
-    startMerge: "Verify and merge",
-    verify: "Verify",
+    startMerge: "Start merge",
     mode: "Split mode",
     size: "By size",
     parts: "By parts",
@@ -182,21 +167,16 @@ const text = {
     overwrite: "Allow overwriting existing output",
     idle: "Ready",
     running: "Running...",
-    noTasks: "No tasks",
-    taskHint: "Interrupted tasks and recovery actions will appear here.",
-    settingsHint: "Settings apply to this split or merge run.",
     chooseInput: "Choose an input file.",
-    chooseOutput: "Choose an output folder.",
     chooseManifest: "Choose a manifest file.",
-    chooseRestore: "Choose a restore output file.",
-    invalidSize: "Enter a valid part size, such as 500 MB or 1 GB.",
+    invalidSize: "Enter a valid part size, such as 1024 KB or 100 MB.",
     invalidParts: "Part count must be an integer greater than or equal to 2.",
     invalidLines: "Lines per part must be an integer greater than 0.",
     invalidSplitPlan: "The current split settings are not reasonable. Adjust the part size or part count so at least 2 non-empty parts can be created.",
     invalidHeaderFormat: "Repeated headers are only supported for CSV, TSV, and TXT files. Make sure the first line is truly a header.",
     repeatHeaderHelp: "Use this for CSV/TSV/TXT files where the first line is a header. Each part keeps the header, and merge removes repeated headers automatically.",
     pathMissing: "The path does not exist or cannot be accessed. Please choose it again.",
-    outputExists: "The output already exists. Enable overwrite or choose another location.",
+    outputExists: "The output already exists. Enable overwrite or choose another file.",
     manifestInvalid: "The manifest cannot be read or has an invalid format.",
     splitDone: "Split completed",
     verifyOk: "Verification passed",
@@ -214,7 +194,6 @@ const text = {
     noIssues: "No issues found",
     partPreview: "Part preview",
     moreParts: "More parts not shown",
-    preview: "Preview",
     approx: "about"
   }
 };
@@ -227,7 +206,6 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("size");
   const [inputPath, setInputPath] = useState("");
   const [manifestPath, setManifestPath] = useState("");
-  const [mergeOut, setMergeOut] = useState("");
   const [sizeValue, setSizeValue] = useState("1");
   const [sizeUnit, setSizeUnit] = useState<SizeUnit>("KB");
   const [countValue, setCountValue] = useState("10");
@@ -235,20 +213,17 @@ export default function App() {
   const [repeatHeader, setRepeatHeader] = useState(false);
   const [overwrite, setOverwrite] = useState(false);
   const [language, setLanguage] = useState<Language>("zh");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [dragActiveTarget, setDragActiveTarget] = useState<"input" | "manifest" | null>(null);
   const [pageState, setPageState] = useState<Record<View, PageState>>({
     split: emptyPageState,
-    merge: emptyPageState,
-    tasks: emptyPageState,
-    settings: emptyPageState
+    merge: emptyPageState
   });
   const [progressState, setProgressState] = useState<Record<View, TaskProgress | null>>({
     split: null,
-    merge: null,
-    tasks: null,
-    settings: null
+    merge: null
   });
 
   const copy = text[language];
@@ -325,16 +300,6 @@ export default function App() {
     }
   }
 
-  async function chooseRestoreFile() {
-    const selected = await save({
-      defaultPath: mergeOut.trim() || defaultRestorePath(recentDirs)
-    });
-    if (typeof selected === "string") {
-      setMergeOut(selected);
-      rememberDir("restoreDir", parentDir(selected));
-    }
-  }
-
   async function runSplit() {
     const validation = validateSplit();
     if (validation) return showError("split", validation);
@@ -352,7 +317,6 @@ export default function App() {
         overwrite
       });
       const manifest = joinPath(output, `${result.original_file_name}.manifest.json`);
-      setManifestPath(manifest);
       setPage("split", {
         status: `${copy.splitDone}: ${formatNumber(result.parts.length)}`,
         details: {
@@ -370,25 +334,11 @@ export default function App() {
     });
   }
 
-  async function runVerify() {
-    const validation = validateManifest();
-    if (validation) return showError("merge", validation);
-    await runTask("merge", async () => {
-      rememberDir("manifestDir", parentDir(manifestPath.trim()));
-      const result = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
-      setPage("merge", {
-        status: result.ok ? copy.verifyOk : copy.verifyFailed,
-        details: makeVerifyDetails(result, copy, manifestPath.trim())
-      });
-    });
-  }
-
   async function runMerge() {
     const validation = validateMerge();
     if (validation) return showError("merge", validation);
     await runTask("merge", async (taskId) => {
       rememberDir("manifestDir", parentDir(manifestPath.trim()));
-      rememberDir("restoreDir", parentDir(mergeOut.trim()));
       const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
       if (!verified.ok) {
         setPage("merge", {
@@ -397,10 +347,12 @@ export default function App() {
         });
         return;
       }
+      const summary = await invoke<ManifestSummary>("manifest_summary", { manifestPath: manifestPath.trim() });
+      const outputPath = defaultMergeOutputPath(manifestPath.trim(), summary.original_file_name);
       const output = await invoke<string>("merge", {
         taskId,
         manifestPath: manifestPath.trim(),
-        outputPath: mergeOut.trim(),
+        outputPath,
         overwrite
       });
       setPage("merge", {
@@ -488,13 +440,8 @@ export default function App() {
     return "";
   }
 
-  function validateManifest() {
-    return manifestPath.trim() ? "" : copy.chooseManifest;
-  }
-
   function validateMerge() {
     if (!manifestPath.trim()) return copy.chooseManifest;
-    if (!mergeOut.trim()) return copy.chooseRestore;
     return "";
   }
 
@@ -504,40 +451,55 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark"><img src={shardcutIcon} alt="" /></div>
-          <div>
-            <strong>ShardCut</strong>
-            <span>0.1.0</span>
-          </div>
-        </div>
-        <nav>
-          <NavButton active={view === "split"} icon={<Scissors size={18} />} label={copy.split} onClick={() => setView("split")} />
-          <NavButton active={view === "merge"} icon={<SplitSquareHorizontal size={18} />} label={copy.merge} onClick={() => setView("merge")} />
-          <NavButton active={view === "tasks"} icon={<ListRestart size={18} />} label={copy.tasks} onClick={() => setView("tasks")} />
-          <NavButton active={view === "settings"} icon={<Settings size={18} />} label={copy.settings} onClick={() => setView("settings")} />
-        </nav>
-      </aside>
-
       <section className="workspace">
-        <header className="header">
-          <div className="title-block">
-            {viewIcon(view)}
-            <h1>{viewTitle(view, copy)}</h1>
+        <header className="app-header">
+          <div className="brand">
+            <div className="brand-mark"><img src={shardcutIcon} alt="" /></div>
+            <div>
+              <strong>ShardCut</strong>
+              <span>0.1.0</span>
+            </div>
           </div>
-          <label className="language-picker">
-            <Languages size={16} />
-            <select value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
-              <option value="zh">中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
+          <div className="mode-tabs" role="tablist" aria-label="ShardCut mode">
+            <button type="button" className={view === "split" ? "active" : ""} onClick={() => setView("split")}>
+              <Scissors size={17} />
+              {copy.split}
+            </button>
+            <button type="button" className={view === "merge" ? "active" : ""} onClick={() => setView("merge")}>
+              <SplitSquareHorizontal size={17} />
+              {copy.merge}
+            </button>
+          </div>
+          <div className="settings-wrap">
+            <button type="button" className="icon-button" aria-label={copy.settings} onClick={() => setSettingsOpen((open) => !open)}>
+              <Settings size={18} />
+            </button>
+            {settingsOpen && (
+              <div className="settings-popover">
+                <label>
+                  <span>{copy.language}</span>
+                  <select value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
+                    <option value="zh">中文</option>
+                    <option value="en">English</option>
+                  </select>
+                </label>
+                <label className="settings-check">
+                  <input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} />
+                  <span>{copy.overwrite}</span>
+                </label>
+              </div>
+            )}
+          </div>
         </header>
+
+        <div className="mode-heading">
+          {view === "split" ? <Scissors size={21} /> : <SplitSquareHorizontal size={21} />}
+          <h1>{view === "split" ? copy.split : copy.merge}</h1>
+        </div>
 
         {view === "split" && (
           <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
-            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} browseText={copy.browse} />
+            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} />
 
             <div className="field-row">
               <label>{copy.mode}</label>
@@ -601,32 +563,12 @@ export default function App() {
 
         {view === "merge" && (
           <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
-            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} browseText={copy.browse} />
-            <PathField label={copy.outputFile} value={mergeOut} onChange={setMergeOut} onBrowse={chooseRestoreFile} browseText={copy.browse} />
+            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} />
             <div className="command-row">
-              <button type="button" disabled={busy} onClick={() => void runVerify()}><ShieldCheck size={16} />{copy.verify}</button>
               {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
             </div>
           </form>
-        )}
-
-        {view === "tasks" && (
-          <div className="tool-panel empty-panel">
-            <ListRestart size={28} />
-            <h2>{copy.noTasks}</h2>
-            <p>{copy.taskHint}</p>
-          </div>
-        )}
-
-        {view === "settings" && (
-          <div className="tool-panel">
-            <label className="check-row">
-              <input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} />
-              {copy.overwrite}
-            </label>
-            <p className="hint">{copy.settingsHint}</p>
-          </div>
         )}
 
         <footer className={`statusbar ${statusClass(activeState.status, copy)}`}>
@@ -649,35 +591,25 @@ function PathField(props: {
   emptyText?: string;
   dragActive?: boolean;
   icon?: ReactNode;
-  browseText: string;
-  onChange?: (value: string) => void;
   onBrowse: () => Promise<void>;
 }) {
-  const isDropControl = Boolean(props.dropTitle);
   return (
     <div className="field-row">
       <label>{props.label}</label>
-      {isDropControl ? (
-        <button
-          className={`path-drop ${props.dragActive ? "drag-active" : ""} ${props.value ? "" : "empty"}`}
-          data-drop-target={props.dropTarget}
-          type="button"
-          onClick={() => void props.onBrowse()}
-        >
-          <div className="path-drop-icon">{props.icon}</div>
-          <div className="path-drop-copy">
-            <div className="path-drop-title">{props.dragActive ? props.dropActiveTitle : props.dropTitle}</div>
-            <div className={`path-drop-value ${props.value ? "" : "empty"}`} title={props.value}>
-              {props.value || props.emptyText}
-            </div>
+      <button
+        className={`path-drop ${props.dragActive ? "drag-active" : ""} ${props.value ? "" : "empty"}`}
+        data-drop-target={props.dropTarget}
+        type="button"
+        onClick={() => void props.onBrowse()}
+      >
+        <div className="path-drop-icon">{props.icon}</div>
+        <div className="path-drop-copy">
+          <div className="path-drop-title">{props.dragActive ? props.dropActiveTitle : props.dropTitle}</div>
+          <div className={`path-drop-value ${props.value ? "" : "empty"}`} title={props.value}>
+            {props.value || props.emptyText}
           </div>
-        </button>
-      ) : (
-        <div className="path-input">
-          <input aria-label={props.label} value={props.value} onChange={(event) => props.onChange?.(event.target.value)} />
-          <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
         </div>
-      )}
+      </button>
     </div>
   );
 }
@@ -754,24 +686,6 @@ function ResultPanel(props: { details: DetailPanel; copy: typeof text.zh }) {
   );
 }
 
-function NavButton(props: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button className={props.active ? "active" : ""} onClick={props.onClick}>{props.icon}<span>{props.label}</span></button>;
-}
-
-function viewTitle(view: View, copy: typeof text.zh) {
-  if (view === "merge") return copy.merge;
-  if (view === "tasks") return copy.tasks;
-  if (view === "settings") return copy.settings;
-  return copy.split;
-}
-
-function viewIcon(view: View) {
-  if (view === "merge") return <SplitSquareHorizontal size={21} />;
-  if (view === "tasks") return <ListRestart size={21} />;
-  if (view === "settings") return <Settings size={21} />;
-  return <Scissors size={21} />;
-}
-
 function statusClass(status: string, copy: typeof text.zh) {
   if (status.startsWith(copy.error) || status === copy.verifyFailed) return "error";
   if (status.includes(copy.splitDone) || status.includes(copy.mergeDone) || status === copy.verifyOk) return "success";
@@ -817,7 +731,7 @@ function friendlyError(error: string, copy: typeof text.zh) {
   if (normalized.includes("repeat header is only supported")) return copy.invalidHeaderFormat;
   if (normalized.includes("output already exists")) return copy.outputExists;
   if (normalized.includes("manifest json") || normalized.includes("expected value")) return copy.manifestInvalid;
-  if (normalized.includes("input is not a file") || normalized.includes("no such file") || normalized.includes("os error 2") || error.includes("系统找不到")) {
+  if (normalized.includes("input is not a file") || normalized.includes("no such file") || normalized.includes("os error 2")) {
     return copy.pathMissing;
   }
   return error;
@@ -839,15 +753,16 @@ function loadRecentDirs(): RecentDirs {
   }
 }
 
-function defaultRestorePath(recentDirs: RecentDirs) {
-  const dir = recentDirs.restoreDir || recentDirs.outputDir;
-  return dir ? joinPath(dir, "restored-file") : "restored-file";
-}
-
 function defaultSplitOutputDir(inputPath: string) {
   const dir = parentDir(inputPath);
   const name = fileName(inputPath);
   return joinPath(dir, `${name}.shardcut-parts`);
+}
+
+function defaultMergeOutputPath(manifestPath: string, originalFileName: string) {
+  const dir = parentDir(manifestPath);
+  const file = `restored-${originalFileName}`;
+  return dir ? joinPath(dir, file) : file;
 }
 
 function fileName(path: string) {

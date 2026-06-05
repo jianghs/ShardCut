@@ -18,6 +18,11 @@ struct ProgressEvent {
     progress: TaskProgress,
 }
 
+#[derive(Serialize)]
+struct ManifestSummary {
+    original_file_name: String,
+}
+
 #[tauri::command]
 fn split(
     app: AppHandle,
@@ -142,6 +147,15 @@ fn verify(manifest_path: String) -> Result<serde_json::Value, String> {
     serde_json::to_value(result).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn manifest_summary(manifest_path: String) -> Result<ManifestSummary, String> {
+    let manifest = shardcut_core::read_manifest(PathBuf::from(manifest_path))
+        .map_err(|error| error.to_string())?;
+    Ok(ManifestSummary {
+        original_file_name: manifest.original_file_name,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -149,7 +163,13 @@ pub fn run() {
             tasks: Mutex::new(HashMap::new()),
         })
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![split, merge, verify, cancel_task])
+        .invoke_handler(tauri::generate_handler![
+            split,
+            merge,
+            verify,
+            manifest_summary,
+            cancel_task
+        ])
         .run(tauri::generate_context!())
         .expect("error while running ShardCut");
 }
