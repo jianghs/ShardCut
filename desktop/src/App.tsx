@@ -390,6 +390,7 @@ export default function App() {
     await runTask("merge", async (taskId) => {
       rememberDir("manifestDir", parentDir(manifestPath.trim()));
       const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
+      setMergeVerify(verified);
       if (!verified.ok) {
         setPage("merge", {
           status: copy.verifyFailed,
