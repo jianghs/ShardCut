@@ -1,20 +1,51 @@
-name: Windows Portable Release
+name: Portable Release
 
 on:
   push:
     branches: [master, main]
+    tags: ["v*"]
   pull_request:
     branches: [master, main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-windows-portable:
-    name: Build Windows portable app
-    runs-on: windows-latest
+  build-portable:
+    name: Build ${{ matrix.label }} portable app
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+            artifact_name: ShardCut-windows-portable
+            package_path: target/release/ShardCut-windows-portable.zip
+          - os: macos-latest
+            label: macOS
+            artifact_name: ShardCut-macos-portable
+            package_path: target/release/ShardCut-macos-portable.tar.gz
+          - os: ubuntu-latest
+            label: Linux
+            artifact_name: ShardCut-linux-portable
+            package_path: target/release/ShardCut-linux-portable.tar.gz
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -33,11 +64,12 @@ jobs:
       - name: Run Rust tests
         run: cargo test -p shardcut-core
 
-      - name: Build Windows portable executable
+      - name: Build portable executable
         working-directory: desktop
-        run: npm run build:portable:win
+        run: npm run build:portable
 
-      - name: Package portable archive
+      - name: Package Windows portable archive
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $releaseDir = "target\release\ShardCut-windows-portable"
@@ -47,10 +79,48 @@ jobs:
           Copy-Item -Path "README.zh-CN.md" -Destination $releaseDir
           Compress-Archive -Path "$releaseDir\*" -DestinationPath "target\release\ShardCut-windows-portable.zip" -Force
 
+      - name: Package macOS portable archive
+        if: runner.os == 'macOS'
+        run: |
+          release_dir="target/release/ShardCut-macos-portable"
+          mkdir -p "$release_dir"
+          cp "target/release/shardcut-desktop" "$release_dir/"
+          cp "README.md" "$release_dir/"
+          cp "README.zh-CN.md" "$release_dir/"
+          chmod +x "$release_dir/shardcut-desktop"
+          tar -czf "target/release/ShardCut-macos-portable.tar.gz" -C "$release_dir" .
+
+      - name: Package Linux portable archive
+        if: runner.os == 'Linux'
+        run: |
+          release_dir="target/release/ShardCut-linux-portable"
+          mkdir -p "$release_dir"
+          cp "target/release/shardcut-desktop" "$release_dir/"
+          cp "README.md" "$release_dir/"
+          cp "README.zh-CN.md" "$release_dir/"
+          chmod +x "$release_dir/shardcut-desktop"
+          tar -czf "target/release/ShardCut-linux-portable.tar.gz" -C "$release_dir" .
+
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ShardCut-windows-portable
-          path: |
-            target/release/shardcut-desktop.exe
-            target/release/ShardCut-windows-portable.zip
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.package_path }}
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build-portable
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download portable artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
