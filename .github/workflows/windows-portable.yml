@@ -1,0 +1,56 @@
+name: Windows Portable Release
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build-windows-portable:
+    name: Build Windows portable app
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Run Rust tests
+        run: cargo test -p shardcut-core
+
+      - name: Build Windows portable executable
+        working-directory: desktop
+        run: npm run build:portable:win
+
+      - name: Package portable archive
+        shell: pwsh
+        run: |
+          $releaseDir = "target\release\ShardCut-windows-portable"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item -Path "target\release\shardcut-desktop.exe" -Destination $releaseDir
+          Copy-Item -Path "README.md" -Destination $releaseDir
+          Copy-Item -Path "README.zh-CN.md" -Destination $releaseDir
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath "target\release\ShardCut-windows-portable.zip" -Force
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShardCut-windows-portable
+          path: |
+            target/release/shardcut-desktop.exe
+            target/release/ShardCut-windows-portable.zip

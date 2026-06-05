@@ -5,16 +5,16 @@ This document tracks planned improvements. Items here are not yet implemented un
 ## Phase 1: Reliability
 
 - [ ] Add large-file benchmark tests for 10GB, 50GB, and 100GB files.
-- [ ] Add cancellable split and merge tasks.
-- [ ] Clean up unfinished `.tmp` files after cancellation or failure.
-- [ ] Show progress, processing speed, and estimated remaining time.
+- [x] Add cancellable split and merge tasks.
+- [x] Clean up unfinished `.tmp` files after cancellation or failure.
+- [x] Show progress, processing speed, and estimated remaining time.
 - [ ] Support task recovery from an existing manifest after interruption.
 - [ ] Improve user-facing errors for file locks, permission issues, and insufficient disk space.
 
 ## Phase 2: Desktop Experience
 
-- [ ] Support drag-and-drop input files in the desktop app.
-- [ ] Remember recently used input, output, and manifest directories.
+- [x] Support drag-and-drop input files in the desktop app.
+- [x] Remember recently used input, output, and manifest directories.
 - [ ] Add a persistent task history view.
 - [ ] Add an "open output folder" action after split and merge.
 - [ ] Show manifest and part integrity status on the merge page.
@@ -30,7 +30,7 @@ This document tracks planned improvements. Items here are not yet implemented un
 
 ## Phase 4: Release And Productization
 
-- [ ] Add GitHub Actions builds for the Windows portable release.
+- [x] Add GitHub Actions builds for the Windows portable release.
 - [ ] Automatically generate release archives and changelogs.
 - [ ] Add optional update checks.
 - [ ] Add Windows code signing.
@@ -39,7 +39,7 @@ This document tracks planned improvements. Items here are not yet implemented un
 
 ## Recommended Next Iteration
 
-- [ ] Add progress, speed, and remaining-time display.
-- [ ] Add cancellation and reliable `.tmp` cleanup.
-- [ ] Add drag-and-drop input and recent directory memory.
-- [ ] Add GitHub Actions for the Windows portable release.
+- [x] Add progress, speed, and remaining-time display.
+- [x] Add cancellation and reliable `.tmp` cleanup.
+- [x] Add drag-and-drop input and recent directory memory.
+- [x] Add GitHub Actions for the Windows portable release.
