@@ -391,13 +391,7 @@ export default function App() {
       rememberDir("manifestDir", parentDir(manifestPath.trim()));
       const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
       setMergeVerify(verified);
-      if (!verified.ok) {
-        setPage("merge", {
-          status: copy.verifyFailed,
-          details: makeVerifyDetails(verified, copy, manifestPath.trim())
-        });
-        return;
-      }
+      if (!verified.ok) return;
       const summary = await invoke<ManifestSummary>("manifest_summary", { manifestPath: manifestPath.trim() });
       const outputPath = defaultMergeOutputPath(manifestPath.trim(), summary.original_file_name);
       const output = await invoke<string>("merge", {
@@ -850,23 +844,6 @@ function statusIcon(status: string, copy: typeof text.zh) {
   if (status.includes(copy.splitDone) || status.includes(copy.mergeDone) || status === copy.verifyOk) return <CheckCircle2 className={className} size={16} />;
   if (status === copy.running) return <RotateCw className={className} size={16} />;
   return <FileJson className={className} size={16} />;
-}
-
-function makeVerifyDetails(result: VerifyResult, copy: typeof text.zh, manifestPath: string): DetailPanel {
-  const issues = [
-    ...result.missing_parts.map((part) => `${copy.missingParts}: ${part}`),
-    ...result.corrupted_parts.map((part) => `${copy.corruptedParts}: ${part}`)
-  ];
-  return {
-    title: result.ok ? copy.verifyOk : copy.verifyFailed,
-    items: [
-      { label: copy.manifestPath, value: manifestPath },
-      { label: copy.originalHash, value: shortHash(result.expected_hash) },
-      { label: copy.missingParts, value: formatNumber(result.missing_parts.length) },
-      { label: copy.corruptedParts, value: formatNumber(result.corrupted_parts.length) }
-    ],
-    issues: issues.length > 0 ? issues : [copy.noIssues]
-  };
 }
 
 function friendlyError(error: string, copy: typeof text.zh) {
