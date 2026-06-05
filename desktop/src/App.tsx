@@ -125,6 +125,8 @@ const text = {
     pathMissing: "路径不存在或无法访问，请重新选择文件。",
     outputExists: "输出文件已存在，请开启覆盖或换一个文件。",
     manifestInvalid: "Manifest 文件无法读取或格式不正确。",
+    invalidOption: "参数无效，请检查当前设置。",
+    unknownError: "操作失败，请检查文件路径和权限后重试。",
     splitDone: "切割完成",
     verifyOk: "校验通过",
     verifyFailed: "校验失败",
@@ -142,7 +144,19 @@ const text = {
     openOutputFolder: "打开输出目录",
     partPreview: "分片预览",
     moreParts: "还有更多分片未显示",
-    approx: "约"
+    approx: "约",
+    cancel: "取消",
+    cancelled: "已取消",
+    clearSelectedFile: "清除已选文件",
+    modeTabs: "ShardCut 模式",
+    taskProgress: "任务进度",
+    eta: "预计剩余",
+    partMetric: "分片",
+    linesMetric: "行数",
+    phaseSplitting: "切割中",
+    phaseMerging: "合并中",
+    phaseVerifying: "校验中",
+    phaseCompleted: "已完成"
   },
   en: {
     split: "Split",
@@ -185,6 +199,8 @@ const text = {
     pathMissing: "The path does not exist or cannot be accessed. Please choose it again.",
     outputExists: "The output already exists. Enable overwrite or choose another file.",
     manifestInvalid: "The manifest cannot be read or has an invalid format.",
+    invalidOption: "The option is invalid. Check the current settings.",
+    unknownError: "The operation failed. Check the file path and permissions, then try again.",
     splitDone: "Split completed",
     verifyOk: "Verification passed",
     verifyFailed: "Verification failed",
@@ -202,7 +218,19 @@ const text = {
     openOutputFolder: "Open output folder",
     partPreview: "Part preview",
     moreParts: "More parts not shown",
-    approx: "about"
+    approx: "about",
+    cancel: "Cancel",
+    cancelled: "Cancelled",
+    clearSelectedFile: "Clear selected file",
+    modeTabs: "ShardCut mode",
+    taskProgress: "Task progress",
+    eta: "ETA",
+    partMetric: "Part",
+    linesMetric: "Lines",
+    phaseSplitting: "Splitting",
+    phaseMerging: "Merging",
+    phaseVerifying: "Verifying",
+    phaseCompleted: "Completed"
   }
 };
 
@@ -409,7 +437,7 @@ export default function App() {
       await task(taskId);
     } catch (error) {
       const message = friendlyError(String(error), copy);
-      if (message === "Cancelled") {
+      if (message === copy.cancelled) {
         setPage(target, { status: message, details: null });
       } else {
         showError(target, message);
@@ -498,7 +526,7 @@ export default function App() {
               <span>0.1.0</span>
             </div>
           </div>
-          <div className="mode-tabs" role="tablist" aria-label="ShardCut mode">
+          <div className="mode-tabs" role="tablist" aria-label={copy.modeTabs}>
             <button type="button" className={view === "split" ? "active" : ""} onClick={() => setView("split")}>
               <Scissors size={17} />
               {copy.split}
@@ -547,7 +575,7 @@ export default function App() {
 
             {view === "split" && (
               <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
-            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} onClear={() => setInputPath("")} clearDisabled={busy} />
+            <PathField label={copy.inputFile} value={inputPath} dropTarget="input" dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} clearLabel={copy.clearSelectedFile} dragActive={dragActiveTarget === "input"} icon={<FileIcon size={20} />} onBrowse={chooseInputFile} onClear={() => setInputPath("")} clearDisabled={busy} />
 
             <div className="field-row">
               <label>{copy.mode}</label>
@@ -603,7 +631,7 @@ export default function App() {
             )}
 
             <div className="command-row">
-              {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
+              {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />{copy.cancel}</button>}
               <button className="primary" disabled={busy} type="submit"><Play size={16} />{copy.startSplit}</button>
             </div>
               </form>
@@ -611,9 +639,9 @@ export default function App() {
 
             {view === "merge" && (
               <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
-            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} onClear={() => setManifestPath("")} clearDisabled={busy} />
+            <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} clearLabel={copy.clearSelectedFile} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} onClear={() => setManifestPath("")} clearDisabled={busy} />
             <div className="command-row">
-              {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
+              {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />{copy.cancel}</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
             </div>
               </form>
@@ -628,7 +656,7 @@ export default function App() {
                 {copy.openOutputFolder}
               </button>
             )}
-            {activeProgress && <ProgressPanel progress={activeProgress} />}
+            {activeProgress && <ProgressPanel progress={activeProgress} copy={copy} language={language} />}
             {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
           </section>
         </div>
@@ -644,6 +672,7 @@ function PathField(props: {
   dropTitle?: string;
   dropActiveTitle?: string;
   emptyText?: string;
+  clearLabel: string;
   dragActive?: boolean;
   icon?: ReactNode;
   onBrowse: () => Promise<void>;
@@ -687,7 +716,7 @@ function PathField(props: {
           </div>
           {hasValue && props.onClear && (
             <button
-              aria-label="Clear selected file"
+              aria-label={props.clearLabel}
               className="path-clear"
               disabled={props.clearDisabled}
               type="button"
@@ -711,15 +740,15 @@ function NumberField(props: { label: string; value: string; onChange: (value: st
   );
 }
 
-function ProgressPanel(props: { progress: TaskProgress }) {
+function ProgressPanel(props: { progress: TaskProgress; copy: typeof text.zh; language: Language }) {
   const percent = props.progress.bytes_total > 0
     ? Math.min(100, (props.progress.bytes_done / props.progress.bytes_total) * 100)
     : 100;
-  const eta = props.progress.eta_seconds == null ? "--" : formatDuration(props.progress.eta_seconds);
+  const eta = props.progress.eta_seconds == null ? "--" : formatDuration(props.progress.eta_seconds, props.language);
   return (
-    <section className="progress-panel" aria-label="Task progress">
+    <section className="progress-panel" aria-label={props.copy.taskProgress}>
       <div className="progress-topline">
-        <strong>{phaseLabel(props.progress.phase)}</strong>
+        <strong>{phaseLabel(props.progress.phase, props.copy)}</strong>
         <span>{percent.toFixed(1)}%</span>
       </div>
       <div className="progress-track">
@@ -728,9 +757,9 @@ function ProgressPanel(props: { progress: TaskProgress }) {
       <div className="progress-metrics">
         <span>{formatBytes(props.progress.bytes_done)} / {formatBytes(props.progress.bytes_total)}</span>
         <span>{formatBytes(props.progress.speed_bps)}/s</span>
-        <span>ETA {eta}</span>
-        <span>Part {formatNumber(props.progress.current_part)}</span>
-        {props.progress.lines_done != null && <span>Lines {formatNumber(props.progress.lines_done)}</span>}
+        <span>{props.copy.eta} {eta}</span>
+        <span>{props.copy.partMetric} {formatNumber(props.progress.current_part)}</span>
+        {props.progress.lines_done != null && <span>{props.copy.linesMetric} {formatNumber(props.progress.lines_done)}</span>}
       </div>
     </section>
   );
@@ -791,7 +820,7 @@ function statusIcon(status: string, copy: typeof text.zh) {
 
 function friendlyError(error: string, copy: typeof text.zh) {
   const normalized = error.toLowerCase();
-  if (normalized.includes("task was cancelled")) return "Cancelled";
+  if (normalized.includes("task was cancelled")) return copy.cancelled;
   if (
     normalized.includes("empty file cannot be split") ||
     normalized.includes("fewer than two parts") ||
@@ -803,9 +832,21 @@ function friendlyError(error: string, copy: typeof text.zh) {
   if (normalized.includes("repeat header is only supported")) return copy.invalidHeaderFormat;
   if (normalized.includes("output already exists")) return copy.outputExists;
   if (normalized.includes("manifest json") || normalized.includes("expected value")) return copy.manifestInvalid;
+  if (
+    normalized.includes("invalid size number") ||
+    normalized.includes("unsupported size unit") ||
+    normalized.includes("size must be greater than 0") ||
+    normalized.includes("parts must be at least 2") ||
+    normalized.includes("lines must be greater than 0") ||
+    normalized.includes("unknown split mode") ||
+    normalized.includes("invalid option")
+  ) {
+    return copy.invalidOption;
+  }
   if (normalized.includes("input is not a file") || normalized.includes("no such file") || normalized.includes("os error 2")) {
     return copy.pathMissing;
   }
+  if (normalized.includes("permission denied") || normalized.includes("access is denied")) return copy.unknownError;
   return error;
 }
 
@@ -903,20 +944,24 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
 }
 
-function formatDuration(seconds: number) {
+function formatDuration(seconds: number, language: Language) {
   if (!Number.isFinite(seconds) || seconds < 0) return "--";
   const wholeSeconds = Math.round(seconds);
   const minutes = Math.floor(wholeSeconds / 60);
   const remainingSeconds = wholeSeconds % 60;
+  if (language === "zh") {
+    if (minutes > 0) return `${minutes}分 ${String(remainingSeconds).padStart(2, "0")}秒`;
+    return `${remainingSeconds}秒`;
+  }
   if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
   return `${remainingSeconds}s`;
 }
 
-function phaseLabel(phase: TaskProgress["phase"]) {
-  if (phase === "Merging") return "Merging";
-  if (phase === "Verifying") return "Verifying";
-  if (phase === "Completed") return "Completed";
-  return "Splitting";
+function phaseLabel(phase: TaskProgress["phase"], copy: typeof text.zh) {
+  if (phase === "Merging") return copy.phaseMerging;
+  if (phase === "Verifying") return copy.phaseVerifying;
+  if (phase === "Completed") return copy.phaseCompleted;
+  return copy.phaseSplitting;
 }
 
 function shortHash(hash: string) {
