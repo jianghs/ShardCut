@@ -311,18 +311,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const path = manifestPath.trim();
-    if (!path) {
-      setMergeVerify(null);
-      return;
-    }
-    let cancelled = false;
-    setMergeVerify("loading");
-    invoke<VerifyResult>("verify", { manifestPath: path }).then(
-      (result) => { if (!cancelled) setMergeVerify(result); },
-      () => { if (!cancelled) setMergeVerify("error"); }
-    );
-    return () => { cancelled = true; };
+    setMergeVerify(null);
   }, [manifestPath]);
 
   async function chooseInputFile() {
@@ -623,7 +612,7 @@ export default function App() {
             {view === "merge" && (
               <form className="tool-panel" onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
             <PathField label={copy.manifest} value={manifestPath} dropTarget="manifest" dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActiveTarget === "manifest"} icon={<FileJson size={20} />} onBrowse={chooseManifestFile} onClear={() => setManifestPath("")} clearDisabled={busy} />
-            {mergeVerify && !busy && <VerifyStatusPanel status={mergeVerify} copy={copy} />}
+            {mergeVerify && typeof mergeVerify !== "string" && !mergeVerify.ok && !busy && <VerifyStatusPanel status={mergeVerify} copy={copy} />}
             <div className="command-row">
               {busy && currentTaskId && <button type="button" onClick={() => void cancelCurrentTask()}><TriangleAlert size={16} />Cancel</button>}
               <button className="primary" disabled={busy} type="submit"><RotateCw size={16} />{copy.startMerge}</button>
