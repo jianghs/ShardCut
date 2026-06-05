@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   File as FileIcon,
   FileJson,
+  FolderOpen,
   ListRestart,
   Play,
   Plus,
@@ -70,6 +71,7 @@ type DetailPanel = {
 type PageState = {
   status: string;
   details: DetailPanel | null;
+  outputPath?: string;
 };
 
 type RecentDirs = {
@@ -141,6 +143,7 @@ const text = {
     missingParts: "缺失分片",
     corruptedParts: "损坏分片",
     noIssues: "未发现问题",
+    openOutputFolder: "打开输出目录",
     partPreview: "分片预览",
     moreParts: "还有更多分片未显示",
     approx: "约"
@@ -198,6 +201,7 @@ const text = {
     missingParts: "Missing parts",
     corruptedParts: "Corrupted parts",
     noIssues: "No issues found",
+    openOutputFolder: "Open output folder",
     partPreview: "Part preview",
     moreParts: "More parts not shown",
     approx: "about"
@@ -338,6 +342,7 @@ export default function App() {
       const manifest = joinPath(output, `${result.original_file_name}.manifest.json`);
       setPage("split", {
         status: `${copy.splitDone}: ${formatNumber(result.parts.length)}`,
+        outputPath: output,
         details: {
           title: copy.splitDone,
           items: [
@@ -376,6 +381,7 @@ export default function App() {
       });
       setPage("merge", {
         status: `${copy.mergeDone}: ${output}`,
+        outputPath: output,
         details: {
           title: copy.mergeDone,
           items: [
@@ -606,6 +612,12 @@ export default function App() {
               {statusIcon(activeState.status, copy)}
               <span>{activeState.status || copy.idle}</span>
             </footer>
+            {activeState.outputPath && !busy && (
+              <button className="open-folder-btn" type="button" onClick={() => { invoke("open_folder", { path: activeState.outputPath }); }}>
+                <FolderOpen size={16} />
+                {copy.openOutputFolder}
+              </button>
+            )}
             {activeProgress && <ProgressPanel progress={activeProgress} />}
             {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
           </section>

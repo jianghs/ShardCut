@@ -534,6 +534,20 @@ h2 {
   animation: spin 1s linear infinite;
 }
 
+.open-folder-btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 36px;
+  border-color: #d0d7de;
+  color: #0f6b70;
+  background: #f6fbfa;
+}
+
+.open-folder-btn:hover:not(:disabled) {
+  border-color: #9fd2cb;
+  background: #edf8f6;
+}
+
 .status-icon {
   flex: 0 0 auto;
 }

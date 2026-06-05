@@ -5,6 +5,7 @@ use shardcut_core::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
@@ -176,10 +177,49 @@ pub fn run() {
             verify,
             manifest_summary,
             file_size,
-            cancel_task
+            cancel_task,
+            open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running ShardCut");
+}
+
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String> {
+    let path = PathBuf::from(&path);
+    let target = if path.is_dir() {
+        path
+    } else {
+        path.parent()
+            .map(PathBuf::from)
+            .unwrap_or(path)
+    };
+    open_in_shell(&target).map_err(|error| error.to_string())
+}
+
+fn open_in_shell(path: &PathBuf) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("failed to open folder: {error}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("failed to open folder: {error}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("failed to open folder: {error}"))?;
+    }
+    Ok(())
 }
 
 fn parse_size(input: &str) -> Result<u64, &'static str> {
