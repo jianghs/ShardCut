@@ -87,16 +87,16 @@ Build the frontend only:
 npm run build
 ```
 
-## Windows Portable Build
+## Portable Builds And Releases
 
-The Windows release is a portable build by default. It does not generate MSI or NSIS installers. The app builds to a directly runnable executable:
+ShardCut currently ships portable desktop builds instead of installers. Local builds use Tauri's no-bundle mode:
 
 ```powershell
 cd desktop
-npm run build:portable:win
+npm run build:portable
 ```
 
-After the build finishes, the executable is located at:
+The release executable is written under `target/release/`. On Windows, the file is:
 
 ```text
 target/release/shardcut-desktop.exe
@@ -104,7 +104,20 @@ target/release/shardcut-desktop.exe
 
 If the previous executable is still running, Windows may prevent the build from replacing it. Close ShardCut before rebuilding.
 
-For distribution, place `shardcut-desktop.exe` and release notes in one folder, then zip the folder. Users can unzip it and run the executable directly.
+GitHub Actions builds portable packages for Windows, macOS, and Linux. Pushes and pull requests upload workflow artifacts for testing. Version tags matching `v*` also create a GitHub Release with downloadable assets:
+
+- `ShardCut-windows-portable.zip`
+- `ShardCut-macos-portable.tar.gz`
+- `ShardCut-linux-portable.tar.gz`
+
+To publish a public release:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Users should download builds from the repository's GitHub Releases page.
 
 ## Verification
 

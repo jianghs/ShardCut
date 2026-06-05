@@ -87,16 +87,16 @@ npm run tauri -- dev
 npm run build
 ```
 
-## Windows 绿色版
+## 多平台绿色版构建与发布
 
-Windows 发布默认使用绿色版，也就是免安装版本，不生成 MSI 或 NSIS 安装器。构建后会得到一个可直接运行的 exe 文件：
+ShardCut 当前发布绿色版，也就是免安装版本，不生成安装器。本地构建使用 Tauri 的 no-bundle 模式：
 
 ```powershell
 cd desktop
-npm run build:portable:win
+npm run build:portable
 ```
 
-构建完成后，可执行文件位于：
+构建完成后，可执行文件位于 `target/release/`。Windows 文件为：
 
 ```text
 target/release/shardcut-desktop.exe
@@ -104,7 +104,20 @@ target/release/shardcut-desktop.exe
 
 如果旧版程序仍在运行，Windows 可能会阻止构建覆盖该 exe。重新打包前请先关闭 ShardCut。
 
-发布绿色版时，将 `shardcut-desktop.exe` 和必要的发布说明放入同一个目录后压缩即可。用户解压后可直接运行，不需要安装。
+GitHub Actions 会为 Windows、macOS 和 Linux 构建绿色版包。普通 push 和 pull request 会上传 workflow artifacts 供测试下载；推送 `v*` 格式的版本标签时，还会自动创建 GitHub Release，并上传以下面向用户下载的文件：
+
+- `ShardCut-windows-portable.zip`
+- `ShardCut-macos-portable.tar.gz`
+- `ShardCut-linux-portable.tar.gz`
+
+发布公开版本：
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+用户应从仓库的 GitHub Releases 页面下载正式版本。
 
 ## 验证
 

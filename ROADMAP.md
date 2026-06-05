@@ -33,9 +33,10 @@ This document tracks planned improvements. Items here are not yet implemented un
 
 ## Phase 4: Release And Productization
 
-- [x] Add GitHub Actions builds for the Windows portable release.
-- [x] Document the Windows portable build flow and rebuild caveat for running executables.
-- [ ] Automatically generate release archives and changelogs.
+- [x] Add GitHub Actions builds for Windows, macOS, and Linux portable releases.
+- [x] Document the portable build flow, release tags, and rebuild caveat for running executables.
+- [x] Automatically generate release archives on version tags.
+- [ ] Automatically generate release changelogs.
 - [ ] Add Windows code signing.
 - [ ] Add project screenshots and usage GIFs to the README.
 
@@ -44,7 +45,7 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [x] Add progress, speed, and remaining-time display.
 - [x] Add cancellation and reliable `.tmp` cleanup.
 - [x] Add drag-and-drop input and recent directory memory.
-- [x] Add GitHub Actions for the Windows portable release.
+- [x] Add GitHub Actions for multi-platform portable releases.
 - [x] Polish the desktop file picker/dropzone, inline progress/results, and fixed-window scrolling.
 - [x] Add open-output-folder actions after successful split and merge.
 - [ ] Add desktop screenshots or GIFs to the README.
