@@ -35,6 +35,7 @@ async fn split(
     value: String,
     repeat_header: bool,
     overwrite: bool,
+    max_parts: u32,
 ) -> Result<serde_json::Value, String> {
     let split_mode = match mode.as_str() {
         "size" => SplitMode::BySize {
@@ -63,6 +64,7 @@ async fn split(
                 output_dir: PathBuf::from(output_dir),
                 mode: split_mode,
                 overwrite,
+                max_parts: Some(max_parts),
             },
             cancellation,
             move |progress| {

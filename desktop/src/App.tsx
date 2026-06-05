@@ -44,7 +44,7 @@ type ManifestSummary = {
   original_file_name: string;
 };
 
-const MAX_REASONABLE_PARTS = 10_000;
+const DEFAULT_MAX_PARTS = 100;
 
 type TaskProgress = {
   phase: "Splitting" | "Merging" | "Verifying" | "Completed";
@@ -82,6 +82,7 @@ type RecentDirs = {
 };
 
 const RECENT_DIRS_KEY = "shardcut.recentDirs";
+const MAX_PARTS_KEY = "shardcut.maxParts";
 const emptyRecentDirs: RecentDirs = {
   inputDir: "",
   outputDir: "",
@@ -111,6 +112,7 @@ const text = {
     sizeValue: "分片大小",
     sizeUnit: "单位",
     partsValue: "分片数量",
+    maxParts: "最大分片数",
     linesValue: "每片行数",
     repeatHeader: "每个分片重复首行表头",
     language: "语言",
@@ -122,7 +124,8 @@ const text = {
     invalidSize: "请输入有效的分片大小，例如 1024 KB 或 100 MB。",
     invalidParts: "分片数量必须是大于等于 2 的整数。",
     invalidLines: "每片行数必须是大于 0 的整数。",
-    tooManyParts: "当前分片大小会生成过多分片，请调大分片大小或改用按份数切割。",
+    invalidMaxParts: "最大分片数必须是大于等于 2 的整数。",
+    tooManyParts: "当前设置会生成超过最大分片数的文件，请调大分片大小、减少份数，或在设置中调整最大分片数。",
     invalidSplitPlan: "当前切割设置不合理：请调整分片大小或分片数量，确保至少能生成 2 个非空分片。",
     invalidHeaderFormat: "重复表头仅支持 CSV、TSV、TXT 文件；请确认第一行确实是字段名或表头。",
     repeatHeaderHelp: "适用于 CSV/TSV/TXT 等第一行为表头的文本表格文件。每个分片会保留表头，合并时会自动去掉重复表头。",
@@ -170,6 +173,7 @@ const text = {
     sizeValue: "Part size",
     sizeUnit: "Unit",
     partsValue: "Part count",
+    maxParts: "Max parts",
     linesValue: "Lines per part",
     repeatHeader: "Repeat first line as header in every part",
     language: "Language",
@@ -181,7 +185,8 @@ const text = {
     invalidSize: "Enter a valid part size, such as 1024 KB or 100 MB.",
     invalidParts: "Part count must be an integer greater than or equal to 2.",
     invalidLines: "Lines per part must be an integer greater than 0.",
-    tooManyParts: "This part size would create too many parts. Increase the size or split by part count.",
+    invalidMaxParts: "Max parts must be an integer greater than or equal to 2.",
+    tooManyParts: "The current settings would create more files than the max parts limit. Increase the part size, reduce the part count, or adjust max parts in settings.",
     invalidSplitPlan: "The current split settings are not reasonable. Adjust the part size or part count so at least 2 non-empty parts can be created.",
     invalidHeaderFormat: "Repeated headers are only supported for CSV, TSV, and TXT files. Make sure the first line is truly a header.",
     repeatHeaderHelp: "Use this for CSV/TSV/TXT files where the first line is a header. Each part keeps the header, and merge removes repeated headers automatically.",
@@ -224,6 +229,7 @@ export default function App() {
   const [lineValue, setLineValue] = useState("1,000,000");
   const [repeatHeader, setRepeatHeader] = useState(false);
   const [overwrite, setOverwrite] = useState(false);
+  const [maxPartsValue, setMaxPartsValue] = useState(loadMaxPartsValue);
   const [language, setLanguage] = useState<Language>("zh");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement | null>(null);
@@ -246,10 +252,18 @@ export default function App() {
     () => `${copy.approx} ${formatBytes(sizeBytes(sizeValue, sizeUnit) || 0)}`,
     [copy, sizeUnit, sizeValue]
   );
+  const maxParts = parseIntegerInput(maxPartsValue);
 
   useEffect(() => {
     localStorage.setItem(RECENT_DIRS_KEY, JSON.stringify(recentDirs));
   }, [recentDirs]);
+
+  useEffect(() => {
+    const parsed = parseIntegerInput(maxPartsValue);
+    if (parsed && parsed >= 2) {
+      localStorage.setItem(MAX_PARTS_KEY, String(parsed));
+    }
+  }, [maxPartsValue]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -339,7 +353,8 @@ export default function App() {
         mode,
         value: splitValue(),
         repeatHeader,
-        overwrite
+        overwrite,
+        maxParts: maxParts ?? DEFAULT_MAX_PARTS
       });
       const manifest = joinPath(output, `${result.original_file_name}.manifest.json`);
       setPage("split", {
@@ -484,10 +499,11 @@ export default function App() {
     if (!parentDir(inputPath.trim())) return copy.chooseInput;
     const partSize = sizeBytes(sizeValue, sizeUnit);
     if (mode === "size" && !partSize) return copy.invalidSize;
+    if (!maxParts || maxParts < 2) return copy.invalidMaxParts;
     if (mode === "size" && partSize) {
       try {
         const inputSize = await invoke<number>("file_size", { path: inputPath.trim() });
-        if (Math.ceil(inputSize / partSize) > MAX_REASONABLE_PARTS) {
+        if (Math.ceil(inputSize / partSize) > maxParts) {
           return copy.tooManyParts;
         }
       } catch {
@@ -497,6 +513,7 @@ export default function App() {
     const count = parseIntegerInput(countValue);
     const lines = parseIntegerInput(lineValue);
     if (mode === "parts" && (!count || count < 2)) return copy.invalidParts;
+    if (mode === "parts" && count && count > maxParts) return copy.tooManyParts;
     if (mode === "lines" && (!lines || lines < 1)) return copy.invalidLines;
     if (mode === "lines" && repeatHeader && !supportsRepeatHeader(inputPath)) return copy.invalidHeaderFormat;
     return "";
@@ -544,6 +561,14 @@ export default function App() {
                     <option value="zh">中文</option>
                     <option value="en">English</option>
                   </select>
+                </label>
+                <label>
+                  <span>{copy.maxParts}</span>
+                  <input
+                    inputMode="numeric"
+                    value={maxPartsValue}
+                    onChange={(event) => setMaxPartsValue(formatNumericInput(event.target.value))}
+                  />
                 </label>
                 <label className="settings-check">
                   <input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} />
@@ -811,7 +836,8 @@ function friendlyError(error: string, copy: typeof text.zh) {
   if (
     normalized.includes("empty file cannot be split") ||
     normalized.includes("fewer than two parts") ||
-    normalized.includes("maximum non-empty parts")
+    normalized.includes("maximum non-empty parts") ||
+    normalized.includes("more than")
   ) {
     return copy.invalidSplitPlan;
   }
@@ -822,6 +848,11 @@ function friendlyError(error: string, copy: typeof text.zh) {
     return copy.pathMissing;
   }
   return error;
+}
+
+function loadMaxPartsValue() {
+  const parsed = parseIntegerInput(localStorage.getItem(MAX_PARTS_KEY) ?? "");
+  return String(parsed && parsed >= 2 ? parsed : DEFAULT_MAX_PARTS);
 }
 
 function loadRecentDirs(): RecentDirs {

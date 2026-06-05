@@ -15,6 +15,7 @@ use std::{
 };
 
 const BUFFER_SIZE: usize = 16 * 1024 * 1024;
+pub const DEFAULT_MAX_PARTS: u32 = 100;
 const MANIFEST_VERSION: u32 = 1;
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -65,6 +66,7 @@ pub struct SplitOptions {
     pub output_dir: PathBuf,
     pub mode: SplitMode,
     pub overwrite: bool,
+    pub max_parts: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -175,7 +177,8 @@ pub fn split_file_with_progress_and_cancellation(
     let metadata = fs::metadata(&options.input_path)?;
     let original_size = metadata.len();
     let original_file_name = file_name(&options.input_path)?;
-    validate_split_plan(&options.mode, original_size)?;
+    validate_split_plan(&options.mode, original_size, max_parts(&options))?;
+    validate_line_split_plan(&options, original_size)?;
     let started = Instant::now();
 
     let manifest = match options.mode {
@@ -364,7 +367,7 @@ pub fn read_manifest<P: AsRef<Path>>(path: P) -> Result<Manifest> {
     Ok(serde_json::from_reader(BufReader::new(file))?)
 }
 
-fn validate_split_plan(mode: &SplitMode, original_size: u64) -> Result<()> {
+fn validate_split_plan(mode: &SplitMode, original_size: u64, max_parts: u32) -> Result<()> {
     if original_size == 0 {
         return Err(ShardCutError::InvalidOption(
             "empty file cannot be split".into(),
@@ -375,11 +378,19 @@ fn validate_split_plan(mode: &SplitMode, original_size: u64) -> Result<()> {
         SplitMode::BySize { bytes } if *bytes >= original_size => Err(
             ShardCutError::InvalidOption("split would create fewer than two parts".into()),
         ),
+        SplitMode::BySize { bytes } if original_size.div_ceil(*bytes) > u64::from(max_parts) => {
+            Err(ShardCutError::InvalidOption(format!(
+                "split would create more than {max_parts} parts"
+            )))
+        }
         SplitMode::ByParts { count } if u64::from(*count) > original_size => {
             Err(ShardCutError::InvalidOption(
                 "parts count exceeds maximum non-empty parts for this file".into(),
             ))
         }
+        SplitMode::ByParts { count } if *count > max_parts => Err(ShardCutError::InvalidOption(
+            format!("split would create more than {max_parts} parts"),
+        )),
         _ => Ok(()),
     }
 }
@@ -398,6 +409,9 @@ fn validate_split_options(options: &SplitOptions) -> Result<()> {
         SplitMode::ByParts { count } if count < 2 => Err(ShardCutError::InvalidOption(
             "parts must be at least 2".into(),
         )),
+        _ if max_parts(options) < 2 => Err(ShardCutError::InvalidOption(
+            "max parts must be at least 2".into(),
+        )),
         SplitMode::ByLines {
             lines_per_part: 0, ..
         } => Err(ShardCutError::InvalidOption(
@@ -411,6 +425,73 @@ fn validate_split_options(options: &SplitOptions) -> Result<()> {
         )),
         _ => Ok(()),
     }
+}
+
+fn validate_line_split_plan(options: &SplitOptions, original_size: u64) -> Result<()> {
+    let SplitMode::ByLines {
+        lines_per_part,
+        repeat_header,
+    } = options.mode
+    else {
+        return Ok(());
+    };
+    let part_count = estimate_line_part_count(
+        &options.input_path,
+        original_size,
+        lines_per_part,
+        repeat_header,
+    )?;
+    let max_parts = max_parts(options);
+    if part_count > u64::from(max_parts) {
+        return Err(ShardCutError::InvalidOption(format!(
+            "split would create more than {max_parts} parts"
+        )));
+    }
+    Ok(())
+}
+
+fn estimate_line_part_count(
+    path: &Path,
+    original_size: u64,
+    lines_per_part: u64,
+    repeat_header: bool,
+) -> Result<u64> {
+    if original_size == 0 {
+        return Ok(0);
+    }
+
+    let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(path)?);
+    let mut buffer = vec![0u8; BUFFER_SIZE];
+    let mut total_lines = 0u64;
+    let mut last_byte = None;
+
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total_lines += memchr_iter(b'\n', &buffer[..read]).count() as u64;
+        last_byte = Some(buffer[read - 1]);
+    }
+
+    if last_byte != Some(b'\n') {
+        total_lines += 1;
+    }
+
+    if repeat_header {
+        let body_lines = total_lines.saturating_sub(1);
+        if body_lines == 0 {
+            Ok(1)
+        } else {
+            Ok(body_lines.div_ceil(lines_per_part))
+        }
+    } else {
+        Ok(total_lines.div_ceil(lines_per_part))
+    }
+}
+
+fn max_parts(options: &SplitOptions) -> u32 {
+    options.max_parts.unwrap_or(DEFAULT_MAX_PARTS)
 }
 
 fn supports_repeated_header(path: &Path) -> bool {
@@ -1017,6 +1098,7 @@ mod tests {
             output_dir: out_dir.clone(),
             mode: SplitMode::BySize { bytes: 1024 },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1048,6 +1130,7 @@ mod tests {
             output_dir: out_dir.clone(),
             mode: SplitMode::ByParts { count: 4 },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1077,6 +1160,7 @@ mod tests {
                 repeat_header: false,
             },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1106,6 +1190,7 @@ mod tests {
                 repeat_header: true,
             },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1139,6 +1224,7 @@ mod tests {
                 repeat_header: true,
             },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1166,6 +1252,7 @@ mod tests {
             output_dir: out_dir.clone(),
             mode: SplitMode::BySize { bytes: 5 },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1189,6 +1276,7 @@ mod tests {
             output_dir: out_dir.clone(),
             mode: SplitMode::BySize { bytes: 1024 },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
 
@@ -1213,6 +1301,7 @@ mod tests {
             output_dir: temp.path().join("parts"),
             mode: SplitMode::BySize { bytes: 1024 },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap_err();
 
@@ -1230,10 +1319,50 @@ mod tests {
             output_dir: temp.path().join("parts"),
             mode: SplitMode::ByParts { count: 4 },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap_err();
 
         assert!(error.to_string().contains("maximum non-empty parts"));
+    }
+
+    #[test]
+    fn split_rejects_more_than_default_max_parts() {
+        let temp = tempdir().unwrap();
+        let input_path = temp.path().join("many.bin");
+        fs::write(&input_path, vec![1u8; 101]).unwrap();
+
+        let error = split_file(SplitOptions {
+            input_path,
+            output_dir: temp.path().join("parts"),
+            mode: SplitMode::BySize { bytes: 1 },
+            overwrite: false,
+            max_parts: None,
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("more than 100 parts"));
+    }
+
+    #[test]
+    fn line_split_rejects_more_than_default_max_parts() {
+        let temp = tempdir().unwrap();
+        let input_path = temp.path().join("many.txt");
+        fs::write(&input_path, "x\n".repeat(101)).unwrap();
+
+        let error = split_file(SplitOptions {
+            input_path,
+            output_dir: temp.path().join("parts"),
+            mode: SplitMode::ByLines {
+                lines_per_part: 1,
+                repeat_header: false,
+            },
+            overwrite: false,
+            max_parts: None,
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("more than 100 parts"));
     }
 
     #[test]
@@ -1250,6 +1379,7 @@ mod tests {
                 repeat_header: true,
             },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap_err();
 
@@ -1273,6 +1403,7 @@ mod tests {
                     bytes: BUFFER_SIZE as u64,
                 },
                 overwrite: false,
+                max_parts: None,
             },
             cancellation,
             move |progress| {
@@ -1305,6 +1436,7 @@ mod tests {
                 bytes: BUFFER_SIZE as u64,
             },
             overwrite: false,
+            max_parts: None,
         })
         .unwrap();
         let restored = temp.path().join("restored.bin");

@@ -75,6 +75,7 @@ fn main() -> Result<()> {
                     output_dir: out,
                     mode,
                     overwrite,
+                    max_parts: None,
                 },
                 print_progress,
             )?;
