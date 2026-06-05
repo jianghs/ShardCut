@@ -272,27 +272,8 @@ pub fn merge_file_with_progress_and_cancellation(
         if !part_path.exists() {
             return Err(ShardCutError::MissingPart(part_path));
         }
-        emit_progress(
-            &mut on_progress,
-            TaskPhase::Verifying,
-            bytes_done,
-            manifest.original_size,
-            part.index,
-            started,
-            None,
-        );
-        let actual = sha256_file(&part_path)?;
-        check_cancelled(&cancellation)?;
-        if actual != part.sha256 {
-            return Err(ShardCutError::CorruptedPart {
-                path: part_path,
-                expected: part.sha256.clone(),
-                actual,
-            });
-        }
-
         let skip_prefix = repeated_header_to_skip(&manifest, part.index);
-        copy_part_for_merge(
+        let actual = copy_part_for_merge(
             &part_path,
             &mut writer,
             &mut merged_hasher,
@@ -311,6 +292,14 @@ pub fn merge_file_with_progress_and_cancellation(
             },
             &cancellation,
         )?;
+        check_cancelled(&cancellation)?;
+        if actual != part.sha256 {
+            return Err(ShardCutError::CorruptedPart {
+                path: part_path,
+                expected: part.sha256.clone(),
+                actual,
+            });
+        }
     }
 
     check_cancelled(&cancellation)?;
@@ -602,7 +591,7 @@ fn split_by_lines(
                 options.overwrite,
             )?;
             let segment = &chunk[start..=newline];
-            active_part.write(segment)?;
+            active_part.write_all(segment)?;
             active_part.lines += 1;
             body_lines_in_part += 1;
             total_lines += 1;
@@ -629,7 +618,7 @@ fn split_by_lines(
                 header.as_deref(),
                 options.overwrite,
             )?;
-            active_part.write(&chunk[start..])?;
+            active_part.write_all(&chunk[start..])?;
             pending_unterminated_line = true;
         }
 
@@ -729,13 +718,13 @@ impl ActivePart {
             committed: false,
         };
         if let Some(header) = header {
-            part.write(header)?;
+            part.write_all(header)?;
             part.lines = 1;
         }
         Ok(part)
     }
 
-    fn write(&mut self, bytes: &[u8]) -> Result<()> {
+    fn write_all(&mut self, bytes: &[u8]) -> Result<()> {
         self.writer
             .as_mut()
             .expect("active part writer is open")
@@ -825,10 +814,11 @@ fn copy_part_for_merge(
     skip_prefix: usize,
     mut on_chunk: impl FnMut(u64),
     cancellation: &CancellationToken,
-) -> Result<()> {
+) -> Result<String> {
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, File::open(part_path)?);
     let mut buffer = vec![0u8; BUFFER_SIZE];
     let mut remaining_skip = skip_prefix;
+    let mut part_hasher = Sha256::new();
 
     loop {
         check_cancelled(cancellation)?;
@@ -836,6 +826,7 @@ fn copy_part_for_merge(
         if read == 0 {
             break;
         }
+        part_hasher.update(&buffer[..read]);
         let start = cmp::min(remaining_skip, read);
         remaining_skip -= start;
         if start < read {
@@ -846,7 +837,7 @@ fn copy_part_for_merge(
         }
     }
 
-    Ok(())
+    Ok(hex_digest(part_hasher.finalize()))
 }
 
 fn emit_progress(

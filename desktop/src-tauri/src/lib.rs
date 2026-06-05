@@ -25,7 +25,7 @@ struct ManifestSummary {
 }
 
 #[tauri::command]
-fn split(
+async fn split(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     task_id: String,
@@ -56,24 +56,28 @@ fn split(
         .map_err(|_| "task state is unavailable".to_string())?
         .insert(task_id.clone(), cancellation.clone());
     let emit_task_id = task_id.clone();
-    let result = split_file_with_progress_and_cancellation(
-        SplitOptions {
-            input_path: PathBuf::from(input_path),
-            output_dir: PathBuf::from(output_dir),
-            mode: split_mode,
-            overwrite,
-        },
-        cancellation,
-        move |progress| {
-            let _ = app.emit(
-                "task-progress",
-                ProgressEvent {
-                    task_id: emit_task_id.clone(),
-                    progress,
-                },
-            );
-        },
-    );
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        split_file_with_progress_and_cancellation(
+            SplitOptions {
+                input_path: PathBuf::from(input_path),
+                output_dir: PathBuf::from(output_dir),
+                mode: split_mode,
+                overwrite,
+            },
+            cancellation,
+            move |progress| {
+                let _ = app.emit(
+                    "task-progress",
+                    ProgressEvent {
+                        task_id: emit_task_id.clone(),
+                        progress,
+                    },
+                );
+            },
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?;
     state
         .tasks
         .lock()
@@ -84,7 +88,7 @@ fn split(
 }
 
 #[tauri::command]
-fn merge(
+async fn merge(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     task_id: String,
@@ -99,23 +103,27 @@ fn merge(
         .map_err(|_| "task state is unavailable".to_string())?
         .insert(task_id.clone(), cancellation.clone());
     let emit_task_id = task_id.clone();
-    let result = merge_file_with_progress_and_cancellation(
-        MergeOptions {
-            manifest_path: PathBuf::from(manifest_path),
-            output_path: PathBuf::from(output_path),
-            overwrite,
-        },
-        cancellation,
-        move |progress| {
-            let _ = app.emit(
-                "task-progress",
-                ProgressEvent {
-                    task_id: emit_task_id.clone(),
-                    progress,
-                },
-            );
-        },
-    );
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        merge_file_with_progress_and_cancellation(
+            MergeOptions {
+                manifest_path: PathBuf::from(manifest_path),
+                output_path: PathBuf::from(output_path),
+                overwrite,
+            },
+            cancellation,
+            move |progress| {
+                let _ = app.emit(
+                    "task-progress",
+                    ProgressEvent {
+                        task_id: emit_task_id.clone(),
+                        progress,
+                    },
+                );
+            },
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?;
     state
         .tasks
         .lock()
@@ -142,9 +150,12 @@ fn cancel_task(state: tauri::State<'_, AppState>, task_id: String) -> Result<(),
 }
 
 #[tauri::command]
-fn verify(manifest_path: String) -> Result<serde_json::Value, String> {
+async fn verify(manifest_path: String) -> Result<serde_json::Value, String> {
     let result =
-        verify_manifest(PathBuf::from(manifest_path)).map_err(|error| error.to_string())?;
+        tauri::async_runtime::spawn_blocking(move || verify_manifest(PathBuf::from(manifest_path)))
+            .await
+            .map_err(|error| error.to_string())?
+            .map_err(|error| error.to_string())?;
     serde_json::to_value(result).map_err(|error| error.to_string())
 }
 
@@ -190,9 +201,7 @@ fn open_folder(path: String) -> Result<(), String> {
     let target = if path.is_dir() {
         path
     } else {
-        path.parent()
-            .map(PathBuf::from)
-            .unwrap_or(path)
+        path.parent().map(PathBuf::from).unwrap_or(path)
     };
     open_in_shell(&target).map_err(|error| error.to_string())
 }
