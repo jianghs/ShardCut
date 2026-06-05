@@ -6,6 +6,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
+  File as FileIcon,
   FileJson,
   FolderOpen,
   Languages,
@@ -92,8 +93,12 @@ const text = {
     manifest: "Manifest 文件",
     outputFile: "恢复文件",
     browse: "浏览...",
-    dragInputHint: "也可以将文件直接拖到此窗口",
-    dragManifestHint: "也可以将 manifest JSON 直接拖到此窗口",
+    dropInputTitle: "拖入文件或浏览选择",
+    dropManifestTitle: "拖入 Manifest JSON 或浏览选择",
+    releaseInputDrop: "松开以使用这个文件",
+    releaseManifestDrop: "松开以使用这个 Manifest",
+    noFileSelected: "尚未选择文件",
+    noManifestSelected: "尚未选择 Manifest",
     startSplit: "开始切割",
     startMerge: "校验并合并",
     verify: "校验",
@@ -155,8 +160,12 @@ const text = {
     manifest: "Manifest file",
     outputFile: "Restored file",
     browse: "Browse...",
-    dragInputHint: "You can also drop a file directly onto this window.",
-    dragManifestHint: "You can also drop a manifest JSON directly onto this window.",
+    dropInputTitle: "Drop file here or browse",
+    dropManifestTitle: "Drop manifest JSON here or browse",
+    releaseInputDrop: "Release to use this file",
+    releaseManifestDrop: "Release to use this manifest",
+    noFileSelected: "No file selected",
+    noManifestSelected: "No manifest selected",
     startSplit: "Start split",
     startMerge: "Verify and merge",
     verify: "Verify",
@@ -540,7 +549,7 @@ export default function App() {
 
         {view === "split" && (
           <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runSplit(); }}>
-            <PathField label={copy.inputFile} value={inputPath} hint={copy.dragInputHint} onChange={(value) => { setInputPath(value); if (!outputDir.trim()) setOutputDir(parentDir(value)); }} onBrowse={chooseInputFile} browseText={copy.browse} />
+            <PathField label={copy.inputFile} value={inputPath} dropTitle={copy.dropInputTitle} dropActiveTitle={copy.releaseInputDrop} emptyText={copy.noFileSelected} dragActive={dragActive} icon={<FileIcon size={20} />} onChange={(value) => { setInputPath(value); if (!outputDir.trim()) setOutputDir(parentDir(value)); }} onBrowse={chooseInputFile} browseText={copy.browse} />
             <PathField label={copy.outputDir} value={outputDir} onChange={setOutputDir} onBrowse={chooseOutputFolder} browseText={copy.browse} />
 
             <div className="field-row">
@@ -605,7 +614,7 @@ export default function App() {
 
         {view === "merge" && (
           <form className={`tool-panel ${dragActive ? "drag-active" : ""}`} onSubmit={(event) => { event.preventDefault(); void runMerge(); }}>
-            <PathField label={copy.manifest} value={manifestPath} hint={copy.dragManifestHint} onChange={setManifestPath} onBrowse={chooseManifestFile} browseText={copy.browse} />
+            <PathField label={copy.manifest} value={manifestPath} dropTitle={copy.dropManifestTitle} dropActiveTitle={copy.releaseManifestDrop} emptyText={copy.noManifestSelected} dragActive={dragActive} icon={<FileJson size={20} />} onChange={setManifestPath} onBrowse={chooseManifestFile} browseText={copy.browse} />
             <PathField label={copy.outputFile} value={mergeOut} onChange={setMergeOut} onBrowse={chooseRestoreFile} browseText={copy.browse} />
             <div className="command-row">
               <button type="button" disabled={busy} onClick={() => void runVerify()}><ShieldCheck size={16} />{copy.verify}</button>
@@ -647,21 +656,39 @@ export default function App() {
 function PathField(props: {
   label: string;
   value: string;
-  hint?: string;
+  dropTitle?: string;
+  dropActiveTitle?: string;
+  emptyText?: string;
+  dragActive?: boolean;
+  icon?: ReactNode;
   browseText: string;
   onChange: (value: string) => void;
   onBrowse: () => Promise<void>;
 }) {
+  const isDropControl = Boolean(props.dropTitle);
   return (
     <div className="field-row">
       <label>{props.label}</label>
-      <div>
-        <div className="path-input">
-          <input value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+      {isDropControl ? (
+        <div className={`path-drop ${props.dragActive ? "drag-active" : ""} ${props.value ? "" : "empty"}`}>
+          <div className="path-drop-icon">{props.icon}</div>
+          <div className="path-drop-copy">
+            <div className="path-drop-title">{props.dragActive ? props.dropActiveTitle : props.dropTitle}</div>
+            <input
+              aria-label={props.label}
+              value={props.value}
+              placeholder={props.emptyText}
+              onChange={(event) => props.onChange(event.target.value)}
+            />
+          </div>
           <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
         </div>
-        {props.hint && <p className="path-hint">{props.hint}</p>}
-      </div>
+      ) : (
+        <div className="path-input">
+          <input aria-label={props.label} value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+          <button type="button" onClick={() => void props.onBrowse()}><FolderOpen size={16} />{props.browseText}</button>
+        </div>
+      )}
     </div>
   );
 }
