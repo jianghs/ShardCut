@@ -66,6 +66,21 @@ type PageState = {
   details: DetailPanel | null;
 };
 
+type RecentDirs = {
+  inputDir: string;
+  outputDir: string;
+  manifestDir: string;
+  restoreDir: string;
+};
+
+const RECENT_DIRS_KEY = "shardcut.recentDirs";
+const emptyRecentDirs: RecentDirs = {
+  inputDir: "",
+  outputDir: "",
+  manifestDir: "",
+  restoreDir: ""
+};
+
 const text = {
   zh: {
     split: "切割",
@@ -194,10 +209,11 @@ const text = {
 const emptyPageState: PageState = { status: "", details: null };
 
 export default function App() {
+  const [recentDirs, setRecentDirs] = useState<RecentDirs>(loadRecentDirs);
   const [view, setView] = useState<View>("split");
   const [mode, setMode] = useState<Mode>("size");
   const [inputPath, setInputPath] = useState("");
-  const [outputDir, setOutputDir] = useState("");
+  const [outputDir, setOutputDir] = useState(recentDirs.outputDir);
   const [manifestPath, setManifestPath] = useState("");
   const [mergeOut, setMergeOut] = useState("");
   const [sizeValue, setSizeValue] = useState("1");
@@ -232,6 +248,10 @@ export default function App() {
   );
 
   useEffect(() => {
+    localStorage.setItem(RECENT_DIRS_KEY, JSON.stringify(recentDirs));
+  }, [recentDirs]);
+
+  useEffect(() => {
     let disposed = false;
     let cleanup: (() => void) | null = null;
     void getCurrentWebview().onDragDropEvent((event) => {
@@ -248,9 +268,11 @@ export default function App() {
       if (!path) return;
       if (view === "merge" && path.toLowerCase().endsWith(".json")) {
         setManifestPath(path);
+        rememberDir("manifestDir", parentDir(path));
         return;
       }
       setInputPath(path);
+      rememberDir("inputDir", parentDir(path));
       if (!outputDir.trim()) setOutputDir(parentDir(path));
     }).then((unlisten) => {
       if (disposed) {
@@ -266,29 +288,50 @@ export default function App() {
   }, [outputDir, view]);
 
   async function chooseInputFile() {
-    const selected = await open({ multiple: false, directory: false });
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      defaultPath: recentDirs.inputDir || undefined
+    });
     if (typeof selected !== "string") return;
     setInputPath(selected);
+    rememberDir("inputDir", parentDir(selected));
     if (!outputDir.trim()) setOutputDir(parentDir(selected));
   }
 
   async function chooseOutputFolder() {
-    const selected = await open({ multiple: false, directory: true });
-    if (typeof selected === "string") setOutputDir(selected);
+    const selected = await open({
+      multiple: false,
+      directory: true,
+      defaultPath: recentDirs.outputDir || undefined
+    });
+    if (typeof selected === "string") {
+      setOutputDir(selected);
+      rememberDir("outputDir", selected);
+    }
   }
 
   async function chooseManifestFile() {
     const selected = await open({
       multiple: false,
       directory: false,
+      defaultPath: recentDirs.manifestDir || undefined,
       filters: [{ name: "ShardCut manifest", extensions: ["json"] }]
     });
-    if (typeof selected === "string") setManifestPath(selected);
+    if (typeof selected === "string") {
+      setManifestPath(selected);
+      rememberDir("manifestDir", parentDir(selected));
+    }
   }
 
   async function chooseRestoreFile() {
-    const selected = await save({ defaultPath: "restored-file" });
-    if (typeof selected === "string") setMergeOut(selected);
+    const selected = await save({
+      defaultPath: mergeOut.trim() || defaultRestorePath(recentDirs)
+    });
+    if (typeof selected === "string") {
+      setMergeOut(selected);
+      rememberDir("restoreDir", parentDir(selected));
+    }
   }
 
   async function runSplit() {
@@ -296,6 +339,8 @@ export default function App() {
     if (validation) return showError("split", validation);
     await runTask("split", async (taskId) => {
       const output = outputDir.trim() || parentDir(inputPath.trim());
+      rememberDir("inputDir", parentDir(inputPath.trim()));
+      rememberDir("outputDir", output);
       const result = await invoke<SplitManifest>("split", {
         taskId,
         inputPath: inputPath.trim(),
@@ -328,6 +373,7 @@ export default function App() {
     const validation = validateManifest();
     if (validation) return showError("merge", validation);
     await runTask("merge", async () => {
+      rememberDir("manifestDir", parentDir(manifestPath.trim()));
       const result = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
       setPage("merge", {
         status: result.ok ? copy.verifyOk : copy.verifyFailed,
@@ -340,6 +386,8 @@ export default function App() {
     const validation = validateMerge();
     if (validation) return showError("merge", validation);
     await runTask("merge", async (taskId) => {
+      rememberDir("manifestDir", parentDir(manifestPath.trim()));
+      rememberDir("restoreDir", parentDir(mergeOut.trim()));
       const verified = await invoke<VerifyResult>("verify", { manifestPath: manifestPath.trim() });
       if (!verified.ok) {
         setPage("merge", {
@@ -414,6 +462,11 @@ export default function App() {
 
   function showError(target: View, message: string) {
     setPage(target, { status: `${copy.error}: ${message}`, details: null });
+  }
+
+  function rememberDir(key: keyof RecentDirs, dir: string) {
+    if (!dir.trim()) return;
+    setRecentDirs((current) => ({ ...current, [key]: dir }));
   }
 
   function splitValue() {
@@ -744,6 +797,27 @@ function friendlyError(error: string, copy: typeof text.zh) {
     return copy.pathMissing;
   }
   return error;
+}
+
+function loadRecentDirs(): RecentDirs {
+  try {
+    const raw = localStorage.getItem(RECENT_DIRS_KEY);
+    if (!raw) return emptyRecentDirs;
+    const parsed = JSON.parse(raw) as Partial<RecentDirs>;
+    return {
+      inputDir: typeof parsed.inputDir === "string" ? parsed.inputDir : "",
+      outputDir: typeof parsed.outputDir === "string" ? parsed.outputDir : "",
+      manifestDir: typeof parsed.manifestDir === "string" ? parsed.manifestDir : "",
+      restoreDir: typeof parsed.restoreDir === "string" ? parsed.restoreDir : ""
+    };
+  } catch {
+    return emptyRecentDirs;
+  }
+}
+
+function defaultRestorePath(recentDirs: RecentDirs) {
+  const dir = recentDirs.restoreDir || recentDirs.outputDir;
+  return dir ? joinPath(dir, "restored-file") : "restored-file";
 }
 
 function parseIntegerInput(input: string) {
