@@ -25,7 +25,7 @@ This document tracks planned improvements. Items here are not yet implemented un
 - [ ] Add a persistent task history view.
 - [x] Add an "open output folder" action after split and merge.
 - [x] Show manifest and part integrity status on the merge page.
-- [ ] Centralize all UI and validation strings for English and Chinese localization.
+- [x] Centralize all UI and validation strings for English and Chinese localization.
 
 ## Phase 3: Verification Capabilities
 

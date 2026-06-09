@@ -43,6 +43,48 @@ pub enum ShardCutError {
     Cancelled,
 }
 
+impl ShardCutError {
+    pub fn error_code(&self) -> &'static str {
+        match self {
+            Self::Io(e) => io_error_code(e),
+            Self::Json(_) => "E_JSON",
+            Self::InvalidOption(_) => "E_INVALID_OPTION",
+            Self::OutputExists(_) => "E_OUTPUT_EXISTS",
+            Self::MissingPart(_) => "E_MISSING_PART",
+            Self::CorruptedPart { .. } => "E_CORRUPTED_PART",
+            Self::HashMismatch { .. } => "E_HASH_MISMATCH",
+            Self::Cancelled => "E_CANCELLED",
+        }
+    }
+}
+
+fn io_error_code(error: &std::io::Error) -> &'static str {
+    use std::io::ErrorKind;
+    match error.kind() {
+        ErrorKind::PermissionDenied => return "E_IO_PERMISSION",
+        ErrorKind::NotFound => return "E_IO_NOT_FOUND",
+        _ => {}
+    }
+    if let Some(code) = error.raw_os_error() {
+        if cfg!(windows) {
+            if code == 32 || code == 33 {
+                return "E_IO_LOCKED";
+            }
+            if code == 39 || code == 112 {
+                return "E_IO_DISK_FULL";
+            }
+        } else {
+            if code == 11 || code == 26 {
+                return "E_IO_LOCKED";
+            }
+            if code == 28 {
+                return "E_IO_DISK_FULL";
+            }
+        }
+    }
+    "E_IO"
+}
+
 pub type Result<T> = std::result::Result<T, ShardCutError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -39,22 +39,26 @@ async fn split(
 ) -> Result<serde_json::Value, String> {
     let split_mode = match mode.as_str() {
         "size" => SplitMode::BySize {
-            bytes: parse_size(&value).map_err(|error| error.to_string())?,
+            bytes: parse_size(&value)?,
         },
         "parts" => SplitMode::ByParts {
-            count: value.parse::<u32>().map_err(|error| error.to_string())?,
+            count: value
+                .parse::<u32>()
+                .map_err(|e| to_coded("E_INVALID_OPTION", e))?,
         },
         "lines" => SplitMode::ByLines {
-            lines_per_part: value.parse::<u64>().map_err(|error| error.to_string())?,
+            lines_per_part: value
+                .parse::<u64>()
+                .map_err(|e| to_coded("E_INVALID_OPTION", e))?,
             repeat_header,
         },
-        _ => return Err("unknown split mode".to_string()),
+        _ => return Err(to_coded("E_UNKNOWN_MODE", "unknown split mode")),
     };
     let cancellation = CancellationToken::new();
     state
         .tasks
         .lock()
-        .map_err(|_| "task state is unavailable".to_string())?
+        .map_err(|_| to_coded("E_TASK_STATE", "task state is unavailable"))?
         .insert(task_id.clone(), cancellation.clone());
     let emit_task_id = task_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -79,14 +83,14 @@ async fn split(
         )
     })
     .await
-    .map_err(|error| error.to_string())?;
+    .map_err(|e| to_coded("E_TASK_JOIN", e))?;
     state
         .tasks
         .lock()
-        .map_err(|_| "task state is unavailable".to_string())?
+        .map_err(|_| to_coded("E_TASK_STATE", "task state is unavailable"))?
         .remove(&task_id);
-    let manifest = result.map_err(|error| error.to_string())?;
-    serde_json::to_value(manifest).map_err(|error| error.to_string())
+    let manifest = result.map_err(|e| to_coded(e.error_code(), e))?;
+    serde_json::to_value(manifest).map_err(|e| to_coded("E_JSON", e))
 }
 
 #[tauri::command]
@@ -102,7 +106,7 @@ async fn merge(
     state
         .tasks
         .lock()
-        .map_err(|_| "task state is unavailable".to_string())?
+        .map_err(|_| to_coded("E_TASK_STATE", "task state is unavailable"))?
         .insert(task_id.clone(), cancellation.clone());
     let emit_task_id = task_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -125,15 +129,15 @@ async fn merge(
         )
     })
     .await
-    .map_err(|error| error.to_string())?;
+    .map_err(|e| to_coded("E_TASK_JOIN", e))?;
     state
         .tasks
         .lock()
-        .map_err(|_| "task state is unavailable".to_string())?
+        .map_err(|_| to_coded("E_TASK_STATE", "task state is unavailable"))?
         .remove(&task_id);
     result
         .map(|path| path.display().to_string())
-        .map_err(|error| error.to_string())
+        .map_err(|e| to_coded(e.error_code(), e))
 }
 
 #[tauri::command]
@@ -141,13 +145,13 @@ fn cancel_task(state: tauri::State<'_, AppState>, task_id: String) -> Result<(),
     let tasks = state
         .tasks
         .lock()
-        .map_err(|_| "task state is unavailable".to_string())?;
+        .map_err(|_| to_coded("E_TASK_STATE", "task state is unavailable"))?;
     match tasks.get(&task_id) {
         Some(cancellation) => {
             cancellation.cancel();
             Ok(())
         }
-        None => Err("task is not running".to_string()),
+        None => Err(to_coded("E_TASK_NOT_RUNNING", "task is not running")),
     }
 }
 
@@ -156,15 +160,15 @@ async fn verify(manifest_path: String) -> Result<serde_json::Value, String> {
     let result =
         tauri::async_runtime::spawn_blocking(move || verify_manifest(PathBuf::from(manifest_path)))
             .await
-            .map_err(|error| error.to_string())?
-            .map_err(|error| error.to_string())?;
-    serde_json::to_value(result).map_err(|error| error.to_string())
+            .map_err(|e| to_coded("E_TASK_JOIN", e))?
+            .map_err(|e| to_coded(e.error_code(), e))?;
+    serde_json::to_value(result).map_err(|e| to_coded("E_JSON", e))
 }
 
 #[tauri::command]
 fn manifest_summary(manifest_path: String) -> Result<ManifestSummary, String> {
     let manifest = shardcut_core::read_manifest(PathBuf::from(manifest_path))
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| to_coded(e.error_code(), e))?;
     Ok(ManifestSummary {
         original_file_name: manifest.original_file_name,
     })
@@ -174,7 +178,7 @@ fn manifest_summary(manifest_path: String) -> Result<ManifestSummary, String> {
 fn file_size(path: String) -> Result<u64, String> {
     std::fs::metadata(PathBuf::from(path))
         .map(|metadata| metadata.len())
-        .map_err(|error| error.to_string())
+        .map_err(|e| to_coded("E_IO", e))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -205,7 +209,7 @@ fn open_folder(path: String) -> Result<(), String> {
     } else {
         path.parent().map(PathBuf::from).unwrap_or(path)
     };
-    open_in_shell(&target).map_err(|error| error.to_string())
+    open_in_shell(&target).map_err(|e| to_coded("E_OPEN_FOLDER", e))
 }
 
 fn open_in_shell(path: &PathBuf) -> Result<(), String> {
@@ -214,39 +218,45 @@ fn open_in_shell(path: &PathBuf) -> Result<(), String> {
         Command::new("explorer")
             .arg(path)
             .spawn()
-            .map_err(|error| format!("failed to open folder: {error}"))?;
+            .map_err(|error| to_coded("E_OPEN_FOLDER", format!("failed to open folder: {error}")))?;
     }
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
             .arg(path)
             .spawn()
-            .map_err(|error| format!("failed to open folder: {error}"))?;
+            .map_err(|error| to_coded("E_OPEN_FOLDER", format!("failed to open folder: {error}")))?;
     }
     #[cfg(target_os = "linux")]
     {
         Command::new("xdg-open")
             .arg(path)
             .spawn()
-            .map_err(|error| format!("failed to open folder: {error}"))?;
+            .map_err(|error| to_coded("E_OPEN_FOLDER", format!("failed to open folder: {error}")))?;
     }
     Ok(())
 }
 
-fn parse_size(input: &str) -> Result<u64, &'static str> {
+fn to_coded(code: &str, error: impl std::fmt::Display) -> String {
+    format!("{code}: {error}")
+}
+
+fn parse_size(input: &str) -> Result<u64, String> {
     let trimmed = input.trim();
     let split_at = trimmed
         .find(|ch: char| !ch.is_ascii_digit())
         .unwrap_or(trimmed.len());
     let (number, unit) = trimmed.split_at(split_at);
-    let value: u64 = number.parse().map_err(|_| "invalid size number")?;
+    let value: u64 = number
+        .parse()
+        .map_err(|_| to_coded("E_PARSE_SIZE", "invalid size number"))?;
     let multiplier = match unit.trim().to_ascii_lowercase().as_str() {
         "" | "b" => 1,
         "k" | "kb" => 1024,
         "m" | "mb" => 1024_u64.pow(2),
         "g" | "gb" => 1024_u64.pow(3),
         "t" | "tb" => 1024_u64.pow(4),
-        _ => return Err("unsupported size unit"),
+        _ => return Err(to_coded("E_PARSE_SIZE", "unsupported size unit")),
     };
     Ok(value * multiplier)
 }

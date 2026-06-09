@@ -20,10 +20,10 @@ import {
   TriangleAlert
 } from "lucide-react";
 import shardcutIcon from "./assets/shardcut-icon.png";
+import { text, friendlyError, isCopyKey, type Language, type CopyKey } from "./i18n";
 
 type Mode = "size" | "parts" | "lines";
 type View = "split" | "merge";
-type Language = "zh" | "en";
 type SizeUnit = "KB" | "MB" | "GB" | "TB";
 
 type SplitManifest = {
@@ -53,37 +53,6 @@ type ProgressEvent = {
   task_id: string;
   progress: TaskProgress;
 };
-
-type CopyKey =
-  | "cancelled"
-  | "chooseInput"
-  | "chooseManifest"
-  | "corruptedParts"
-  | "error"
-  | "fileName"
-  | "fileSize"
-  | "invalidHeaderFormat"
-  | "invalidLines"
-  | "invalidMaxParts"
-  | "invalidOption"
-  | "invalidParts"
-  | "invalidSize"
-  | "invalidSplitPlan"
-  | "manifestPath"
-  | "manifestInvalid"
-  | "mergeDone"
-  | "missingParts"
-  | "originalHash"
-  | "outputPath"
-  | "outputExists"
-  | "partCount"
-  | "pathMissing"
-  | "running"
-  | "splitDone"
-  | "tooManyParts"
-  | "unknownError"
-  | "verifyFailed"
-  | "verifyOk";
 
 type PageStatus =
   | { kind: "cancelled" }
@@ -121,157 +90,6 @@ const emptyRecentDirs: RecentDirs = {
   outputDir: "",
   manifestDir: "",
   restoreDir: ""
-};
-
-const text = {
-  zh: {
-    split: "切割",
-    merge: "合并",
-    settings: "设置",
-    inputFile: "输入文件",
-    manifest: "Manifest 文件",
-    dropInputTitle: "拖入文件或点击选择",
-    dropManifestTitle: "拖入 Manifest JSON 或点击选择",
-    releaseInputDrop: "松开以使用这个文件",
-    releaseManifestDrop: "松开以使用这个 Manifest",
-    noFileSelected: "尚未选择文件",
-    noManifestSelected: "尚未选择 Manifest",
-    startSplit: "开始切割",
-    startMerge: "开始合并",
-    mode: "切割方式",
-    size: "按大小",
-    parts: "按份数",
-    lines: "按行数",
-    sizeValue: "分片大小",
-    sizeUnit: "单位",
-    partsValue: "分片数量",
-    maxParts: "最大分片数",
-    linesValue: "每片行数",
-    repeatHeader: "每个分片重复首行表头",
-    language: "语言",
-    overwrite: "允许覆盖已有输出",
-    idle: "就绪",
-    running: "执行中...",
-    chooseInput: "请选择输入文件。",
-    chooseManifest: "请选择 manifest 文件。",
-    invalidSize: "请输入有效的分片大小，例如 1024 KB 或 100 MB。",
-    invalidParts: "分片数量必须是大于等于 2 的整数。",
-    invalidLines: "每片行数必须是大于 0 的整数。",
-    invalidMaxParts: "最大分片数必须是大于等于 2 的整数。",
-    tooManyParts: "当前设置会生成超过最大分片数的文件，请调大分片大小、减少份数，或在设置中调整最大分片数。",
-    invalidSplitPlan: "当前切割设置不合理：请调整分片大小或分片数量，确保至少能生成 2 个非空分片。",
-    invalidHeaderFormat: "重复表头仅支持 CSV、TSV、TXT 文件；请确认第一行确实是字段名或表头。",
-    repeatHeaderHelp: "适用于 CSV/TSV/TXT 等第一行为表头的文本表格文件。每个分片会保留表头，合并时会自动去掉重复表头。",
-    pathMissing: "路径不存在或无法访问，请重新选择文件。",
-    outputExists: "输出文件已存在，请开启覆盖或换一个文件。",
-    manifestInvalid: "Manifest 文件无法读取或格式不正确。",
-    invalidOption: "参数无效，请检查当前设置。",
-    unknownError: "操作失败，请检查文件路径和权限后重试。",
-    splitDone: "切割完成",
-    verifyOk: "校验通过",
-    verifyFailed: "校验失败",
-    mergeDone: "合并完成",
-    error: "错误",
-    fileName: "文件名",
-    fileSize: "文件大小",
-    partCount: "分片数量",
-    manifestPath: "Manifest",
-    originalHash: "原文件 SHA-256",
-    outputPath: "输出路径",
-    missingParts: "缺失分片",
-    corruptedParts: "损坏分片",
-    noIssues: "未发现问题",
-    openOutputFolder: "打开输出目录",
-    partPreview: "分片预览",
-    moreParts: "还有更多分片未显示",
-    approx: "约",
-    cancel: "取消",
-    cancelled: "已取消",
-    clearSelectedFile: "清除已选文件",
-    modeTabs: "ShardCut 模式",
-    taskProgress: "任务进度",
-    eta: "预计剩余",
-    partMetric: "分片",
-    linesMetric: "行数",
-    phaseSplitting: "切割中",
-    phaseMerging: "合并中",
-    phaseVerifying: "校验中",
-    phaseCompleted: "已完成"
-  },
-  en: {
-    split: "Split",
-    merge: "Merge",
-    settings: "Settings",
-    inputFile: "Input file",
-    manifest: "Manifest file",
-    dropInputTitle: "Drop file here or click to choose",
-    dropManifestTitle: "Drop manifest JSON here or click to choose",
-    releaseInputDrop: "Release to use this file",
-    releaseManifestDrop: "Release to use this manifest",
-    noFileSelected: "No file selected",
-    noManifestSelected: "No manifest selected",
-    startSplit: "Start split",
-    startMerge: "Start merge",
-    mode: "Split mode",
-    size: "By size",
-    parts: "By parts",
-    lines: "By lines",
-    sizeValue: "Part size",
-    sizeUnit: "Unit",
-    partsValue: "Part count",
-    maxParts: "Max parts",
-    linesValue: "Lines per part",
-    repeatHeader: "Repeat first line as header in every part",
-    language: "Language",
-    overwrite: "Allow overwriting existing output",
-    idle: "Ready",
-    running: "Running...",
-    chooseInput: "Choose an input file.",
-    chooseManifest: "Choose a manifest file.",
-    invalidSize: "Enter a valid part size, such as 1024 KB or 100 MB.",
-    invalidParts: "Part count must be an integer greater than or equal to 2.",
-    invalidLines: "Lines per part must be an integer greater than 0.",
-    invalidMaxParts: "Max parts must be an integer greater than or equal to 2.",
-    tooManyParts: "The current settings would create more files than the max parts limit. Increase the part size, reduce the part count, or adjust max parts in settings.",
-    invalidSplitPlan: "The current split settings are not reasonable. Adjust the part size or part count so at least 2 non-empty parts can be created.",
-    invalidHeaderFormat: "Repeated headers are only supported for CSV, TSV, and TXT files. Make sure the first line is truly a header.",
-    repeatHeaderHelp: "Use this for CSV/TSV/TXT files where the first line is a header. Each part keeps the header, and merge removes repeated headers automatically.",
-    pathMissing: "The path does not exist or cannot be accessed. Please choose it again.",
-    outputExists: "The output already exists. Enable overwrite or choose another file.",
-    manifestInvalid: "The manifest cannot be read or has an invalid format.",
-    invalidOption: "The option is invalid. Check the current settings.",
-    unknownError: "The operation failed. Check the file path and permissions, then try again.",
-    splitDone: "Split completed",
-    verifyOk: "Verification passed",
-    verifyFailed: "Verification failed",
-    mergeDone: "Merge completed",
-    error: "Error",
-    fileName: "File name",
-    fileSize: "File size",
-    partCount: "Part count",
-    manifestPath: "Manifest",
-    originalHash: "Original SHA-256",
-    outputPath: "Output path",
-    missingParts: "Missing parts",
-    corruptedParts: "Corrupted parts",
-    noIssues: "No issues found",
-    openOutputFolder: "Open output folder",
-    partPreview: "Part preview",
-    moreParts: "More parts not shown",
-    approx: "about",
-    cancel: "Cancel",
-    cancelled: "Cancelled",
-    clearSelectedFile: "Clear selected file",
-    modeTabs: "ShardCut mode",
-    taskProgress: "Task progress",
-    eta: "ETA",
-    partMetric: "Part",
-    linesMetric: "Lines",
-    phaseSplitting: "Splitting",
-    phaseMerging: "Merging",
-    phaseVerifying: "Verifying",
-    phaseCompleted: "Completed"
-  }
 };
 
 const emptyPageState: PageState = { status: null, details: null };
@@ -390,7 +208,7 @@ export default function App() {
       multiple: false,
       directory: false,
       defaultPath: recentDirs.manifestDir || undefined,
-      filters: [{ name: "ShardCut manifest", extensions: ["json"] }]
+      filters: [{ name: copy.manifestFilterLabel, extensions: ["json"] }]
     });
     if (typeof selected === "string") {
       setManifestPath(selected);
@@ -476,7 +294,7 @@ export default function App() {
     try {
       await task(taskId);
     } catch (error) {
-      const message = friendlyError(String(error), copy);
+      const message = friendlyError(String(error));
       if (message === "cancelled") {
         setPage(target, { status: { kind: "cancelled" }, details: null });
       } else {
@@ -584,9 +402,9 @@ export default function App() {
               <div className="settings-popover">
                 <label>
                   <span>{copy.language}</span>
-                  <select value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
-                    <option value="zh">中文</option>
-                    <option value="en">English</option>
+                   <select value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
+                    <option value="zh">{text["zh"].langLabel}</option>
+                    <option value="en">{text["en"].langLabel}</option>
                   </select>
                 </label>
                 <label>
@@ -696,7 +514,7 @@ export default function App() {
                 {copy.openOutputFolder}
               </button>
             )}
-            {activeProgress && <ProgressPanel progress={activeProgress} copy={copy} language={language} />}
+            {activeProgress && <ProgressPanel progress={activeProgress} copy={copy} />}
             {activeState.details && <ResultPanel details={activeState.details} copy={copy} />}
           </section>
         </div>
@@ -780,11 +598,11 @@ function NumberField(props: { label: string; value: string; onChange: (value: st
   );
 }
 
-function ProgressPanel(props: { progress: TaskProgress; copy: typeof text.zh; language: Language }) {
+function ProgressPanel(props: { progress: TaskProgress; copy: Record<CopyKey, string> }) {
   const percent = props.progress.bytes_total > 0
     ? Math.min(100, (props.progress.bytes_done / props.progress.bytes_total) * 100)
     : 100;
-  const eta = props.progress.eta_seconds == null ? "--" : formatDuration(props.progress.eta_seconds, props.language);
+  const eta = props.progress.eta_seconds == null ? "--" : formatDuration(props.progress.eta_seconds, props.copy);
   return (
     <section className="progress-panel" aria-label={props.copy.taskProgress}>
       <div className="progress-topline">
@@ -876,42 +694,6 @@ function statusText(status: PageStatus | null, copy: typeof text.zh) {
 function errorStatus(message: CopyKey | string): PageStatus {
   if (isCopyKey(message)) return { kind: "error", messageKey: message };
   return { kind: "error", message };
-}
-
-function isCopyKey(value: string): value is CopyKey {
-  return value in text.zh;
-}
-
-function friendlyError(error: string, _copy: typeof text.zh): CopyKey | string {
-  const normalized = error.toLowerCase();
-  if (normalized.includes("task was cancelled")) return "cancelled";
-  if (
-    normalized.includes("empty file cannot be split") ||
-    normalized.includes("fewer than two parts") ||
-    normalized.includes("maximum non-empty parts") ||
-    normalized.includes("more than")
-  ) {
-    return "invalidSplitPlan";
-  }
-  if (normalized.includes("repeat header is only supported")) return "invalidHeaderFormat";
-  if (normalized.includes("output already exists")) return "outputExists";
-  if (normalized.includes("manifest json") || normalized.includes("expected value")) return "manifestInvalid";
-  if (
-    normalized.includes("invalid size number") ||
-    normalized.includes("unsupported size unit") ||
-    normalized.includes("size must be greater than 0") ||
-    normalized.includes("parts must be at least 2") ||
-    normalized.includes("lines must be greater than 0") ||
-    normalized.includes("unknown split mode") ||
-    normalized.includes("invalid option")
-  ) {
-    return "invalidOption";
-  }
-  if (normalized.includes("input is not a file") || normalized.includes("no such file") || normalized.includes("os error 2")) {
-    return "pathMissing";
-  }
-  if (normalized.includes("permission denied") || normalized.includes("access is denied")) return "unknownError";
-  return error;
 }
 
 function loadMaxPartsValue() {
@@ -1008,17 +790,13 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
 }
 
-function formatDuration(seconds: number, language: Language) {
+function formatDuration(seconds: number, copy: Record<CopyKey, string>) {
   if (!Number.isFinite(seconds) || seconds < 0) return "--";
   const wholeSeconds = Math.round(seconds);
   const minutes = Math.floor(wholeSeconds / 60);
   const remainingSeconds = wholeSeconds % 60;
-  if (language === "zh") {
-    if (minutes > 0) return `${minutes}分 ${String(remainingSeconds).padStart(2, "0")}秒`;
-    return `${remainingSeconds}秒`;
-  }
-  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
-  return `${remainingSeconds}s`;
+  if (minutes > 0) return `${minutes}${copy.durationMin} ${String(remainingSeconds).padStart(2, "0")}${copy.durationSec}`;
+  return `${remainingSeconds}${copy.durationSec}`;
 }
 
 function phaseLabel(phase: TaskProgress["phase"], copy: typeof text.zh) {
